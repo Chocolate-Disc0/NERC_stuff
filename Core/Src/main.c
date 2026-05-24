@@ -60,6 +60,76 @@ static void MX_TIM3_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+typedef struct
+{
+	TIM_HandleTypeDef* timer;
+	uint32_t channel;
+	GPIO_TypeDef* pin1Port;
+	uint16_t pin1Pin;
+	GPIO_TypeDef* pin2Port;
+	uint16_t pin2Pin;
+} portsAndPins;
+
+const portsAndPins motors[4] = {{&htim3, TIM_CHANNEL_1, frontIn2_GPIO_Port, frontIn2_Pin, frontIn1_GPIO_Port, frontIn1_Pin},
+							{&htim3, TIM_CHANNEL_2, frontIn3_GPIO_Port, frontIn3_Pin, frontIn4_GPIO_Port, frontIn4_Pin},
+							{&htim3, TIM_CHANNEL_3, backIn2_GPIO_Port, backIn2_Pin, backIn1_GPIO_Port, backIn1_Pin},
+							{&htim3, TIM_CHANNEL_4, backIn3_GPIO_Port, backIn3_Pin, backIn4_GPIO_Port, backIn4_Pin}};
+const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
+
+void OneWord(const int speed, const int direction)
+{
+	for (int index = 0; index < 4; index++)
+	{
+		__HAL_TIM_SET_COMPARE(motors[index].timer, motors[index].channel, speed);
+		HAL_GPIO_WritePin(motors[index].pin1Port, motors[index].pin1Pin, direction == FORWARD ? GPIO_PIN_SET : GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(motors[index].pin2Port, motors[index].pin2Pin, direction == FORWARD ? GPIO_PIN_RESET : GPIO_PIN_SET);
+	}
+}
+
+void Stop()
+{
+	for (int index = 0; index < 4; index++)
+	{
+		HAL_GPIO_WritePin(motors[index].pin1Port, motors[index].pin1Pin, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(motors[index].pin2Port, motors[index].pin2Pin, GPIO_PIN_RESET);
+	}
+}
+
+void Sideways(const int speed, const int direction)
+{
+	for (int index = 0; index < 4; index++)
+	{
+		__HAL_TIM_SET_COMPARE(motors[index].timer, motors[index].channel, speed);
+		if (index == 0 || index == 3)
+		{
+			HAL_GPIO_WritePin(motors[index].pin1Port, motors[index].pin1Pin, direction == RIGHT ? GPIO_PIN_SET : GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(motors[index].pin2Port, motors[index].pin2Pin, direction == RIGHT ? GPIO_PIN_RESET : GPIO_PIN_SET);
+		}
+		else
+		{
+			HAL_GPIO_WritePin(motors[index].pin1Port, motors[index].pin1Pin, direction == RIGHT ? GPIO_PIN_RESET : GPIO_PIN_SET);
+			HAL_GPIO_WritePin(motors[index].pin2Port, motors[index].pin2Pin, direction == RIGHT ? GPIO_PIN_SET : GPIO_PIN_RESET);
+		}
+    }
+}
+
+void Diagonal(const int speed, const int sidewayDir, const int oneWayDir)
+{
+	for (int index = 0; index < 4; index++)
+	{
+		__HAL_TIM_SET_COMPARE(motors[index].timer, motors[index].channel, speed);
+		if (sidewayDir == RIGHT && (index == 0 || index == 3))
+		{
+			HAL_GPIO_WritePin(motors[index].pin1Port, motors[index].pin1Pin, oneWayDir == FORWARD ? GPIO_PIN_SET : GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(motors[index].pin2Port, motors[index].pin2Pin, oneWayDir == FORWARD ? GPIO_PIN_RESET : GPIO_PIN_SET);
+		}
+		else if (sidewayDir == LEFT && (index == 1 || index == 2))
+		{
+			HAL_GPIO_WritePin(motors[index].pin1Port, motors[index].pin1Pin, oneWayDir == FORWARD ? GPIO_PIN_RESET : GPIO_PIN_SET);
+			HAL_GPIO_WritePin(motors[index].pin2Port, motors[index].pin2Pin, oneWayDir == FORWARD ? GPIO_PIN_SET : GPIO_PIN_RESET);
+		}
+    }
+}
 /* USER CODE END 0 */
 
 /**
@@ -104,16 +174,12 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  for (int index = 0; index < 1000; index++)
-	  {
-		  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, index);
-		  HAL_Delay(1);
-	  }
-	  for (int index = 1000; index >= 0; index--)
-	  {
-		  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, index);
-		  HAL_Delay(1);
-	  }
+	  OneWord(1000, FORWARD);
+	  HAL_Delay(5000);
+	  Sideways(1000, RIGHT);
+	  HAL_Delay(5000);
+	  Stop();
+	  HAL_Delay(5000);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
