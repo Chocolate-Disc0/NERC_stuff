@@ -175,9 +175,27 @@ int main(void)
   while (1)
   {
 	  OneWord(1000, FORWARD);
-	  HAL_Delay(5000);
-	  Sideways(1000, RIGHT);
-	  HAL_Delay(5000);
+	  HAL_Delay(2000);
+	  Stop();
+	  HAL_Delay(500);
+	  OneWord(1000, BACKWARDS);
+	  HAL_Delay(2000);
+	  Stop();
+	  HAL_Delay(500);
+	  Diagonal(1000, RIGHT, FORWARD);
+	  HAL_Delay(2000);
+	  Stop();
+	  HAL_Delay(500);
+	  Diagonal(1000, LEFT, BACKWARDS);
+	  HAL_Delay(2000);
+	  Stop();
+	  HAL_Delay(500);
+	  Diagonal(1000, LEFT, FORWARD);
+	  HAL_Delay(2000);
+	  Stop();
+	  HAL_Delay(500);
+	  Diagonal(1000, RIGHT, BACKWARDS);
+	  HAL_Delay(2000);
 	  Stop();
 	  HAL_Delay(5000);
     /* USER CODE END WHILE */
