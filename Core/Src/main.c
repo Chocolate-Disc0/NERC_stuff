@@ -92,7 +92,7 @@ const portsAndPins motors[4] = {{&htim3, TIM_CHANNEL_1, frontIn2_GPIO_Port, fron
 							{&htim3, TIM_CHANNEL_3, backIn2_GPIO_Port, backIn2_Pin, backIn1_GPIO_Port, backIn1_Pin, &htim2},
 							{&htim3, TIM_CHANNEL_4, backIn3_GPIO_Port, backIn3_Pin, backIn4_GPIO_Port, backIn4_Pin, &htim1}};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
-const double kp = 1, ki = 0.1, kd = 0, period = 0.01;
+const double kp = 1, ki = 0, kd = 0, period = 0.01;
 const int intMax = 750, intMin = -750, maxSpeed = 1000, minSpeed = 1000;
 
 void updateEncoder(pidState *positions, int index)
@@ -113,6 +113,7 @@ void Stop()
 {
 	for (int index = 0; index < 4; index++)
 	{
+		__HAL_TIM_SET_COMPARE(motors[index].pwmTimer, motors[index].channel, 0);
 		HAL_GPIO_WritePin(motors[index].pin1Port, motors[index].pin1Pin, GPIO_PIN_RESET);
 		HAL_GPIO_WritePin(motors[index].pin2Port, motors[index].pin2Pin, GPIO_PIN_RESET);
 	}
