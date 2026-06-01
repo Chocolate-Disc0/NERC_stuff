@@ -49,7 +49,6 @@ TIM_HandleTypeDef htim5;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-int rawCount = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -70,28 +69,44 @@ static void MX_TIM2_Init(void);
 
 typedef struct
 {
-	TIM_HandleTypeDef* timer;
+	double intState;
+	double drevState;
+	int reached;
+	int32_t totalPos;
+	uint32_t prevPos;
+} pidState;
+
+typedef struct
+{
+	TIM_HandleTypeDef* pwmTimer;
 	uint32_t channel;
 	GPIO_TypeDef* pin1Port;
 	uint16_t pin1Pin;
 	GPIO_TypeDef* pin2Port;
 	uint16_t pin2Pin;
+	TIM_HandleTypeDef* encTimer;
 } portsAndPins;
 
-const portsAndPins motors[4] = {{&htim3, TIM_CHANNEL_1, frontIn2_GPIO_Port, frontIn2_Pin, frontIn1_GPIO_Port, frontIn1_Pin},
-							{&htim3, TIM_CHANNEL_2, frontIn3_GPIO_Port, frontIn3_Pin, frontIn4_GPIO_Port, frontIn4_Pin},
-							{&htim3, TIM_CHANNEL_3, backIn2_GPIO_Port, backIn2_Pin, backIn1_GPIO_Port, backIn1_Pin},
-							{&htim3, TIM_CHANNEL_4, backIn3_GPIO_Port, backIn3_Pin, backIn4_GPIO_Port, backIn4_Pin}};
+const portsAndPins motors[4] = {{&htim3, TIM_CHANNEL_1, frontIn2_GPIO_Port, frontIn2_Pin, frontIn1_GPIO_Port, frontIn1_Pin, &htim4},
+							{&htim3, TIM_CHANNEL_2, frontIn3_GPIO_Port, frontIn3_Pin, frontIn4_GPIO_Port, frontIn4_Pin, &htim5},
+							{&htim3, TIM_CHANNEL_3, backIn2_GPIO_Port, backIn2_Pin, backIn1_GPIO_Port, backIn1_Pin, &htim2},
+							{&htim3, TIM_CHANNEL_4, backIn3_GPIO_Port, backIn3_Pin, backIn4_GPIO_Port, backIn4_Pin, &htim1}};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
+const double kp = 1, ki = 0.1, kd = 0, period = 0.01;
+const int intMax = 750, intMin = -750, maxSpeed = 1000, minSpeed = 1000;
 
-void OneWord(const int speed, const int direction)
+void updateEncoder(pidState *positions, int index)
 {
-	for (int index = 0; index < 4; index++)
-	{
-		__HAL_TIM_SET_COMPARE(motors[index].timer, motors[index].channel, speed);
-		HAL_GPIO_WritePin(motors[index].pin1Port, motors[index].pin1Pin, direction == FORWARD ? GPIO_PIN_SET : GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(motors[index].pin2Port, motors[index].pin2Pin, direction == FORWARD ? GPIO_PIN_RESET : GPIO_PIN_SET);
-	}
+	int16_t diff = (int16_t)(__HAL_TIM_GET_COUNTER(motors[index].encTimer) - positions->prevPos);
+	positions->totalPos += diff;
+	positions->prevPos = __HAL_TIM_GET_COUNTER(motors[index].encTimer);
+}
+
+void OneWord(const int speed, const int direction, const int index)
+{
+	__HAL_TIM_SET_COMPARE(motors[index].pwmTimer, motors[index].channel, speed);
+	HAL_GPIO_WritePin(motors[index].pin1Port, motors[index].pin1Pin, direction == FORWARD ? GPIO_PIN_SET : GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(motors[index].pin2Port, motors[index].pin2Pin, direction == FORWARD ? GPIO_PIN_RESET : GPIO_PIN_SET);
 }
 
 void Stop()
@@ -107,7 +122,7 @@ void Sideways(const int speed, const int direction)
 {
 	for (int index = 0; index < 4; index++)
 	{
-		__HAL_TIM_SET_COMPARE(motors[index].timer, motors[index].channel, speed);
+		__HAL_TIM_SET_COMPARE(motors[index].pwmTimer, motors[index].channel, speed);
 		if (index == 0 || index == 3)
 		{
 			HAL_GPIO_WritePin(motors[index].pin1Port, motors[index].pin1Pin, direction == RIGHT ? GPIO_PIN_SET : GPIO_PIN_RESET);
@@ -125,7 +140,7 @@ void Diagonal(const int speed, const int sidewayDir, const int oneWayDir)
 {
 	for (int index = 0; index < 4; index++)
 	{
-		__HAL_TIM_SET_COMPARE(motors[index].timer, motors[index].channel, speed);
+		__HAL_TIM_SET_COMPARE(motors[index].pwmTimer, motors[index].channel, speed);
 		if (sidewayDir == RIGHT && (index == 0 || index == 3))
 		{
 			HAL_GPIO_WritePin(motors[index].pin1Port, motors[index].pin1Pin, oneWayDir == FORWARD ? GPIO_PIN_SET : GPIO_PIN_RESET);
@@ -138,6 +153,53 @@ void Diagonal(const int speed, const int sidewayDir, const int oneWayDir)
 		}
     }
 }
+
+double updatePid(pidState *pid, double error, double position)
+{
+	double propVal = 0, intVal = 0, dervVal = 0;
+	propVal = kp * error;
+	pid->intState += error * period;
+	dervVal = kd * ((pid->drevState - position) / period);
+	pid->intState = pid->intState > intMax ? intMax : pid->intState;
+	pid->intState = pid->intState < intMin ? intMin : pid->intState;
+	intVal = pid->intState * ki;
+	pid->drevState = position;
+	return propVal + intVal + dervVal;
+}
+
+void onewordPid(int target)
+{
+	uint32_t prevTick = HAL_GetTick();
+	pidState motorState[4];
+	for (int index = 0; index < 4; index++)
+	{
+		__HAL_TIM_SET_COUNTER(motors[index].encTimer, 0);
+		motorState[index].drevState = 0;
+		motorState[index].reached = 0;
+		motorState[index].intState = 0;
+		motorState[index].prevPos = 0;
+		motorState[index].totalPos = 0;
+	}
+	while (!(motorState[0].reached && motorState[1].reached && motorState[2].reached && motorState[3].reached))
+	{
+		if (HAL_GetTick() - prevTick >= 10)
+		{
+			for (int index = 0; index < 4; index++)
+			{
+				updateEncoder(&motorState[index], index);
+				int error = target - motorState[index].totalPos;
+				double speed = updatePid(&motorState[index], error, motorState[index].totalPos);
+				int absSpeed = speed < 0 ? speed * -1 : speed;
+				OneWord(absSpeed > maxSpeed ? maxSpeed : absSpeed, speed < 0 ? BACKWARDS : FORWARD, index);
+				if (error < 67 && error > -67) motorState[index].reached = 1;
+				else motorState[index].reached = 0;
+			}
+			prevTick = HAL_GetTick();
+		}
+	}
+	Stop();
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -192,12 +254,12 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  onewordPid(42446);
   while (1)
   {
-	  rawCount = __HAL_TIM_GET_COUNTER(&htim2);
-	  __HAL_TIM_SET_COMPARE(motors[1].timer, motors[1].channel, 500);
-	  HAL_GPIO_WritePin(motors[1].pin1Port, motors[1].pin1Pin, GPIO_PIN_SET);
-	  HAL_GPIO_WritePin(motors[1].pin2Port, motors[1].pin2Pin, GPIO_PIN_RESET);
+//	  __HAL_TIM_SET_COMPARE(motors[1].pwmTimer, motors[1].channel, 500);
+//	  HAL_GPIO_WritePin(motors[1].pin1Port, motors[1].pin1Pin, GPIO_PIN_SET);
+//	  HAL_GPIO_WritePin(motors[1].pin2Port, motors[1].pin2Pin, GPIO_PIN_RESET);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
