@@ -70,7 +70,7 @@ static void MX_TIM2_Init(void);
 typedef struct
 {
 	double intState;
-	double drevState;
+	int drevState;
 	int reached;
 	int32_t totalPos;
 	uint32_t prevPos;
@@ -92,8 +92,8 @@ const portsAndPins motors[4] = {{&htim3, TIM_CHANNEL_1, frontIn2_GPIO_Port, fron
 							{&htim3, TIM_CHANNEL_3, backIn2_GPIO_Port, backIn2_Pin, backIn1_GPIO_Port, backIn1_Pin, &htim2},
 							{&htim3, TIM_CHANNEL_4, backIn3_GPIO_Port, backIn3_Pin, backIn4_GPIO_Port, backIn4_Pin, &htim1}};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
-const double kp = 1, ki = 0, kd = 0, period = 0.01;
-const int intMax = 750, intMin = -750, maxSpeed = 1000, minSpeed = 1000;
+const double kp = 5, ki = 0, kd = 0, period = 0.01;
+const int intMax = 500, intMin = -500, maxSpeed = 1000;
 
 void updateEncoder(pidState *positions, int index)
 {
