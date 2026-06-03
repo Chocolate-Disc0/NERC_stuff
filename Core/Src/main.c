@@ -26,6 +26,10 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+volatile uint32_t rawVal2 = 0;
+volatile uint32_t rawVal3 = 0;
+volatile uint32_t rawVal4 = 0;
+volatile uint32_t rawVal5 = 0;
 typedef struct
 {
 	double intState;
@@ -70,15 +74,50 @@ TIM_HandleTypeDef htim5;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-const portsAndPins motors[4] = {{0, 1, &htim2},
+const portsAndPins motors[4] = {{1, 0, &htim2},
 							{2, 3, &htim3},
-							{4, 5, &htim4},
+							{5, 4, &htim4},
 							{6, 7, &htim5}};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
-const double kp = 5, ki = 0, kd = 0, period = 0.01;
-const int intMax = 1500, intMin = -1500, maxSpeed = 4095;
+const double kp = 250, ki = 20, kd = 0, period = 10;
+const int intMax = 1000, intMin = -1000, maxSpeed = 4095, maxPwm = 4095, minPwm = -4095, maxSpeeeed = 16, minSpeed = 3;
 /* USER CODE END PV */
-
+//void onewordPid(int target)
+//{
+//	uint32_t prevTick = HAL_GetTick();
+//	pidState motorState[4];
+//	for (int index = 0; index < 4; index++)
+//	{
+//		__HAL_TIM_SET_COUNTER(motors[index].encTimer, 0);
+//		motorState[index].drevState = 0;
+//		motorState[index].reached = 0;
+//		motorState[index].intState = 0;
+//		motorState[index].prevPos = 0;
+//		motorState[index].totalPos = 0;
+//	}
+//	while (!(motorState[0].reached && motorState[1].reached && motorState[2].reached && motorState[3].reached))
+//	{
+//		rawVal2 = __HAL_TIM_GET_COUNTER(&htim2);
+//		rawVal3 = __HAL_TIM_GET_COUNTER(&htim3);
+//		rawVal4 = __HAL_TIM_GET_COUNTER(&htim4);
+//		rawVal5 = __HAL_TIM_GET_COUNTER(&htim5);
+//		if (HAL_GetTick() - prevTick >= 10)
+//		{
+//			for (int index = 0; index < 4; index++)
+//			{
+//				updateEncoder(&motorState[index], index);
+//				int error = target - motorState[index].totalPos;
+//				double speed = updatePid(&motorState[index], error, motorState[index].totalPos);
+//				int absSpeed = speed < 0 ? speed * -1 : speed;
+//				OneWord(absSpeed > maxSpeed ? maxSpeed : absSpeed, speed < 0 ? BACKWARDS : FORWARD, index);
+//				if (error < 250 && error > -250) motorState[index].reached = 1;
+//				else motorState[index].reached = 0;
+//			}
+//			prevTick = HAL_GetTick();
+//		}
+//	}
+//	Stop();
+//}
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
@@ -138,11 +177,12 @@ void PCA9685_SetPWM(uint8_t Channel, uint16_t OnTime, uint16_t OffTime)
   HAL_I2C_Mem_Write(&hi2c1, PCA9685_ADDRESS, registerAddress, I2C_MEMADD_SIZE_8BIT, pwm, 4, 10);
 }
 
-void updateEncoder(pidState *positions, int index)
+double updateEncoder(pidState *positions, int index)
 {
 	int16_t diff = (int16_t)(__HAL_TIM_GET_COUNTER(motors[index].encTimer) - positions->prevPos);
 	positions->totalPos += diff;
 	positions->prevPos = __HAL_TIM_GET_COUNTER(motors[index].encTimer);
+	return ((diff / period) > maxSpeeeed ? maxSpeeeed : diff / period);
 }
 
 void OneWord(const int speed, const int direction, const int index)
@@ -196,21 +236,26 @@ void Stop()
 //    }
 //}
 
-double updatePid(pidState *pid, double error, double position)
+double updatePid(pidState *pid, double error, double velocity)
 {
 	double propVal = 0, intVal = 0, dervVal = 0;
 	propVal = kp * error;
 	pid->intState += error * period;
-	dervVal = kd * ((pid->drevState - position) / period);
+	dervVal = kd * ((pid->drevState - velocity) / period);
 	pid->intState = pid->intState > intMax ? intMax : pid->intState;
 	pid->intState = pid->intState < intMin ? intMin : pid->intState;
 	intVal = pid->intState * ki;
-	pid->drevState = position;
-	return propVal + intVal + dervVal;
+	pid->drevState = velocity;
+	double output = propVal + intVal + dervVal;
+	output = output > maxPwm ? maxPwm : output;
+	output = output < minPwm ? minPwm : output;
+	return output;
 }
 
 void onewordPid(int target)
 {
+	int targetSpeed = 0;
+	int breakDistance = 2500;
 	uint32_t prevTick = HAL_GetTick();
 	pidState motorState[4];
 	for (int index = 0; index < 4; index++)
@@ -226,14 +271,33 @@ void onewordPid(int target)
 	{
 		if (HAL_GetTick() - prevTick >= 10)
 		{
+			rawVal2 = ((__HAL_TIM_GET_COUNTER(motors[0].encTimer) - motorState[0].prevPos) / period);
+			rawVal3 = ((__HAL_TIM_GET_COUNTER(motors[1].encTimer) - motorState[1].prevPos) / period);
+			rawVal4 = ((__HAL_TIM_GET_COUNTER(motors[2].encTimer) - motorState[2].prevPos) / period);
+			rawVal5 = ((__HAL_TIM_GET_COUNTER(motors[3].encTimer) - motorState[3].prevPos) / period);
 			for (int index = 0; index < 4; index++)
 			{
-				updateEncoder(&motorState[index], index);
-				int error = target - motorState[index].totalPos;
-				double speed = updatePid(&motorState[index], error, motorState[index].totalPos);
-				int absSpeed = speed < 0 ? speed * -1 : speed;
-				OneWord(absSpeed > maxSpeed ? maxSpeed : absSpeed, speed < 0 ? BACKWARDS : FORWARD, index);
-				if (error < 67 && error > -67) motorState[index].reached = 1;
+				double currentSpeed = updateEncoder(&motorState[index], index);
+				int distanceAway = target - motorState[index].totalPos;
+				if (distanceAway > breakDistance) targetSpeed = maxSpeeeed;
+				else if (distanceAway < -breakDistance) targetSpeed = -maxSpeeeed;
+				else
+				{
+					targetSpeed = (maxSpeeeed * distanceAway) / breakDistance;
+					if (targetSpeed > 0 && targetSpeed < minSpeed) targetSpeed = minSpeed;
+					if (targetSpeed < 0 && targetSpeed > -minSpeed) targetSpeed = -minSpeed;
+				}
+				int error = targetSpeed - currentSpeed;
+				double pwmVal = updatePid(&motorState[index], error, currentSpeed);
+				int absPwm = pwmVal < 0 ? pwmVal * -1 : pwmVal;
+				OneWord(absPwm, pwmVal < 0 ? BACKWARDS : FORWARD, index);
+				if (distanceAway < 500 && distanceAway > -500)
+				{
+					motorState[index].reached = 1;
+					OneWord(0, FORWARD, index);
+					OneWord(0, BACKWARDS, index);
+					motorState[index].intState = 0;
+				}
 				else motorState[index].reached = 0;
 			}
 			prevTick = HAL_GetTick();
@@ -241,6 +305,43 @@ void onewordPid(int target)
 	}
 	Stop();
 }
+
+//void onewordPid(int target)
+//{
+//	uint32_t prevTick = HAL_GetTick();
+//	pidState motorState[4];
+//	for (int index = 0; index < 4; index++)
+//	{
+//		__HAL_TIM_SET_COUNTER(motors[index].encTimer, 0);
+//		motorState[index].drevState = 0;
+//		motorState[index].reached = 0;
+//		motorState[index].intState = 0;
+//		motorState[index].prevPos = 0;
+//		motorState[index].totalPos = 0;
+//	}
+//	while (!(motorState[0].reached && motorState[1].reached && motorState[2].reached && motorState[3].reached))
+//	{
+//		rawVal2 = __HAL_TIM_GET_COUNTER(&htim2);
+//		rawVal3 = __HAL_TIM_GET_COUNTER(&htim3);
+//		rawVal4 = __HAL_TIM_GET_COUNTER(&htim4);
+//		rawVal5 = __HAL_TIM_GET_COUNTER(&htim5);
+//		if (HAL_GetTick() - prevTick >= 10)
+//		{
+//			for (int index = 0; index < 4; index++)
+//			{
+//				updateEncoder(&motorState[index], index);
+//				int error = target - motorState[index].totalPos;
+//				double speed = updatePid(&motorState[index], error, motorState[index].totalPos);
+//				int absSpeed = speed < 0 ? speed * -1 : speed;
+//				OneWord(absSpeed > maxSpeed ? maxSpeed : absSpeed, speed < 0 ? BACKWARDS : FORWARD, index);
+//				if (error < 250 && error > -250) motorState[index].reached = 1;
+//				else motorState[index].reached = 0;
+//			}
+//			prevTick = HAL_GetTick();
+//		}
+//	}
+//	Stop();
+//}
 
 /* USER CODE END 0 */
 
@@ -293,14 +394,14 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  for (int index = 0; index < 16; index++)
+  {
+	  PCA9685_SetPWM(index, 0, 0);
+  }
+  HAL_Delay(2000);
+  onewordPid(56485);
   while (1)
   {
-	  PCA9685_SetPWM(3, 0, 1000);
-	  PCA9685_SetPWM(4, 0, 1000);
-	  PCA9685_SetPWM(1, 0, 0);
-	  PCA9685_SetPWM(0, 0, 0);
-	  HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-	  HAL_Delay(250);
 	  //	  __HAL_TIM_SET_COMPARE(motors[1].pwmTimer, motors[1].channel, 500);
 	  //	  HAL_GPIO_WritePin(motors[1].pin1Port, motors[1].pin1Pin, GPIO_PIN_SET);
 	  //	  HAL_GPIO_WritePin(motors[1].pin2Port, motors[1].pin2Pin, GPIO_PIN_RESET);

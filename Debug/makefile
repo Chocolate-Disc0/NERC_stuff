@@ -60,8 +60,8 @@ all: main-build
 main-build: temp_Nerc_Stuff.elf secondary-outputs
 
 # Tool invocations
-temp_Nerc_Stuff.elf temp_Nerc_Stuff.map: $(OBJS) $(USER_OBJS) /home/Choco/Documents/stm32stuff/temp_Nerc_Stuff/STM32L152RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "temp_Nerc_Stuff.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m3 -T"/home/Choco/Documents/stm32stuff/temp_Nerc_Stuff/STM32L152RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="temp_Nerc_Stuff.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+temp_Nerc_Stuff.elf temp_Nerc_Stuff.map: $(OBJS) $(USER_OBJS) /home/Choco/Documents/NERC_stuff/STM32L152RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "temp_Nerc_Stuff.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m3 -T"/home/Choco/Documents/NERC_stuff/STM32L152RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="temp_Nerc_Stuff.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
