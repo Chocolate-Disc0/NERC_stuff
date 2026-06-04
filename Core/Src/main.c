@@ -30,6 +30,9 @@ volatile uint32_t rawVal2 = 0;
 volatile uint32_t rawVal3 = 0;
 volatile uint32_t rawVal4 = 0;
 volatile uint32_t rawVal5 = 0;
+int leftIr = 0;
+int middleIr = 0;
+int rightIr = 0;
 typedef struct
 {
 	double intState;
@@ -43,6 +46,9 @@ typedef struct
 {
 	int pin1;
 	int pin2;
+	double kp;
+	double ki;
+	double kd;
 	TIM_HandleTypeDef* encTimer;
 } portsAndPins;
 /* USER CODE END PTD */
@@ -74,50 +80,15 @@ TIM_HandleTypeDef htim5;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-const portsAndPins motors[4] = {{1, 0, &htim2},
-							{2, 3, &htim3},
-							{5, 4, &htim4},
-							{6, 7, &htim5}};
+const portsAndPins motors[4] = {{1, 0, 0.11, 0.033, 0, &htim2},
+							{2, 3, 0.1461, 0.048684, 0, &htim3},
+							{5, 4, 0.15136, 0.050456, 0, &htim4},
+							{6, 7, 0.2, 0.067, 0, &htim5}};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
-const double kp = 250, ki = 20, kd = 0, period = 10;
-const int intMax = 1000, intMin = -1000, maxSpeed = 4095, maxPwm = 4095, minPwm = -4095, maxSpeeeed = 16, minSpeed = 3;
+const double kp = 0.25, ki = 0.1, kd = 0, period = 0.01;
+const int intMax = 2000, intMin = -2000, maxSpeed = 4095, maxPwm = 4095, minPwm = -4095, maxSpeeeed = 15000, minSpeed = 3000, speedAdjust = 500;
 /* USER CODE END PV */
-//void onewordPid(int target)
-//{
-//	uint32_t prevTick = HAL_GetTick();
-//	pidState motorState[4];
-//	for (int index = 0; index < 4; index++)
-//	{
-//		__HAL_TIM_SET_COUNTER(motors[index].encTimer, 0);
-//		motorState[index].drevState = 0;
-//		motorState[index].reached = 0;
-//		motorState[index].intState = 0;
-//		motorState[index].prevPos = 0;
-//		motorState[index].totalPos = 0;
-//	}
-//	while (!(motorState[0].reached && motorState[1].reached && motorState[2].reached && motorState[3].reached))
-//	{
-//		rawVal2 = __HAL_TIM_GET_COUNTER(&htim2);
-//		rawVal3 = __HAL_TIM_GET_COUNTER(&htim3);
-//		rawVal4 = __HAL_TIM_GET_COUNTER(&htim4);
-//		rawVal5 = __HAL_TIM_GET_COUNTER(&htim5);
-//		if (HAL_GetTick() - prevTick >= 10)
-//		{
-//			for (int index = 0; index < 4; index++)
-//			{
-//				updateEncoder(&motorState[index], index);
-//				int error = target - motorState[index].totalPos;
-//				double speed = updatePid(&motorState[index], error, motorState[index].totalPos);
-//				int absSpeed = speed < 0 ? speed * -1 : speed;
-//				OneWord(absSpeed > maxSpeed ? maxSpeed : absSpeed, speed < 0 ? BACKWARDS : FORWARD, index);
-//				if (error < 250 && error > -250) motorState[index].reached = 1;
-//				else motorState[index].reached = 0;
-//			}
-//			prevTick = HAL_GetTick();
-//		}
-//	}
-//	Stop();
-//}
+
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
@@ -182,7 +153,10 @@ double updateEncoder(pidState *positions, int index)
 	int16_t diff = (int16_t)(__HAL_TIM_GET_COUNTER(motors[index].encTimer) - positions->prevPos);
 	positions->totalPos += diff;
 	positions->prevPos = __HAL_TIM_GET_COUNTER(motors[index].encTimer);
-	return ((diff / period) > maxSpeeeed ? maxSpeeeed : diff / period);
+	double output = (diff / period);
+	if (output > maxSpeeeed) output = maxSpeeeed;
+	else if (output < -maxSpeeeed) output = -maxSpeeeed;
+	return output;
 }
 
 void OneWord(const int speed, const int direction, const int index)
@@ -200,23 +174,22 @@ void Stop()
 	}
 }
 
-//void Sideways(const int speed, const int direction)
-//{
-//	for (int index = 0; index < 4; index++)
-//	{
-//		__HAL_TIM_SET_COMPARE(motors[index].pwmTimer, motors[index].channel, speed);
-//		if (index == 0 || index == 3)
-//		{
-//			HAL_GPIO_WritePin(motors[index].pin1Port, motors[index].pin1Pin, direction == RIGHT ? GPIO_PIN_SET : GPIO_PIN_RESET);
-//			HAL_GPIO_WritePin(motors[index].pin2Port, motors[index].pin2Pin, direction == RIGHT ? GPIO_PIN_RESET : GPIO_PIN_SET);
-//		}
-//		else
-//		{
-//			HAL_GPIO_WritePin(motors[index].pin1Port, motors[index].pin1Pin, direction == RIGHT ? GPIO_PIN_RESET : GPIO_PIN_SET);
-//			HAL_GPIO_WritePin(motors[index].pin2Port, motors[index].pin2Pin, direction == RIGHT ? GPIO_PIN_SET : GPIO_PIN_RESET);
-//		}
-//    }
-//}
+void Sideways(const int speed, const int direction)
+{
+	for (int index = 0; index < 4; index++)
+	{
+		if (index == 0 || index == 3)
+		{
+			PCA9685_SetPWM(motors[index].pin1, 0, direction == FORWARD ? speed : 0);
+			PCA9685_SetPWM(motors[index].pin2, 0, direction == FORWARD ? 0 : speed);
+		}
+		else
+		{
+			PCA9685_SetPWM(motors[index].pin1, 0, direction == FORWARD ? 0 : speed);
+			PCA9685_SetPWM(motors[index].pin2, 0, direction == FORWARD ? speed : 0);
+		}
+    }
+}
 //
 //void Diagonal(const int speed, const int sidewayDir, const int oneWayDir)
 //{
@@ -236,7 +209,7 @@ void Stop()
 //    }
 //}
 
-double updatePid(pidState *pid, double error, double velocity)
+double updatePid(pidState *pid, double error, double velocity, int index)
 {
 	double propVal = 0, intVal = 0, dervVal = 0;
 	propVal = kp * error;
@@ -288,10 +261,10 @@ void onewordPid(int target)
 					if (targetSpeed < 0 && targetSpeed > -minSpeed) targetSpeed = -minSpeed;
 				}
 				int error = targetSpeed - currentSpeed;
-				double pwmVal = updatePid(&motorState[index], error, currentSpeed);
+				double pwmVal = updatePid(&motorState[index], error, currentSpeed, index);
 				int absPwm = pwmVal < 0 ? pwmVal * -1 : pwmVal;
 				OneWord(absPwm, pwmVal < 0 ? BACKWARDS : FORWARD, index);
-				if (distanceAway < 500 && distanceAway > -500)
+				if (distanceAway < 50 && distanceAway > -50)
 				{
 					motorState[index].reached = 1;
 					OneWord(0, FORWARD, index);
@@ -300,7 +273,7 @@ void onewordPid(int target)
 				}
 				else motorState[index].reached = 0;
 			}
-			prevTick = HAL_GetTick();
+			prevTick += 10;
 		}
 	}
 	Stop();
@@ -399,7 +372,11 @@ int main(void)
 	  PCA9685_SetPWM(index, 0, 0);
   }
   HAL_Delay(2000);
-  onewordPid(56485);
+  onewordPid(40107);
+  Sideways(2000, RIGHT);
+  HAL_Delay(2000);
+  Stop();
+  onewordPid(-40107);
   while (1)
   {
 	  //	  __HAL_TIM_SET_COMPARE(motors[1].pwmTimer, motors[1].channel, 500);
@@ -657,7 +634,7 @@ static void MX_TIM5_Init(void)
   htim5.Instance = TIM5;
   htim5.Init.Prescaler = 0;
   htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim5.Init.Period = 4294967295;
+  htim5.Init.Period = 65535;
   htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
@@ -751,6 +728,18 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : middleIR_Pin leftIR_Pin */
+  GPIO_InitStruct.Pin = middleIR_Pin|leftIR_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : rightIR_Pin */
+  GPIO_InitStruct.Pin = rightIR_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(rightIR_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 

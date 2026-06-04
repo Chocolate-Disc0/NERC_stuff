@@ -73,6 +73,12 @@ void Error_Handler(void);
 #define topRightEncA_GPIO_Port GPIOA
 #define topRightEncB_Pin GPIO_PIN_7
 #define topRightEncB_GPIO_Port GPIOA
+#define middleIR_Pin GPIO_PIN_13
+#define middleIR_GPIO_Port GPIOB
+#define leftIR_Pin GPIO_PIN_14
+#define leftIR_GPIO_Port GPIOB
+#define rightIR_Pin GPIO_PIN_10
+#define rightIR_GPIO_Port GPIOA
 #define TMS_Pin GPIO_PIN_13
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14
