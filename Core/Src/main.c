@@ -46,6 +46,10 @@ typedef struct
 {
 	int pin1;
 	int pin2;
+	uint16_t rightEnPin;
+	uint16_t leftEnPin;
+	GPIO_TypeDef * rightEnPort;
+	GPIO_TypeDef * leftEnPort;
 	double kp;
 	double ki;
 	double kd;
@@ -80,13 +84,13 @@ TIM_HandleTypeDef htim5;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-const portsAndPins motors[4] = {{1, 0, 0.11, 0.033, 0, &htim2},
-							{2, 3, 0.1461, 0.048684, 0, &htim3},
-							{5, 4, 0.15136, 0.050456, 0, &htim4},
-							{6, 7, 0.2, 0.067, 0, &htim5}};
+const portsAndPins motors[4] = {{1, 0, topLeftR_EN_Pin, topLeftL_EN_Pin, topLeftR_EN_GPIO_Port, topLeftL_EN_GPIO_Port, 0.11, 0.033, 0, &htim2},
+							{2, 3, topRightR_EN_Pin, topRightL_EN_Pin, topRightR_EN_GPIO_Port, topRightL_EN_GPIO_Port, 0.1461, 0.048684, 0, &htim3},
+							{5, 4, bottomLeftR_EN_Pin, bottomLeftL_EN_Pin, bottomLeftR_EN_GPIO_Port, bottomLeftL_EN_GPIO_Port, 0.15136, 0.050456, 0, &htim4},
+							{6, 7, bottomRightR_EN_Pin, bottomRightL_EN_Pin, bottomRightR_EN_GPIO_Port, bottomRightL_EN_GPIO_Port, 0.2, 0.067, 0, &htim5}};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
-const double kp = 0.25, ki = 0.1, kd = 0, period = 0.01;
-const int intMax = 2000, intMin = -2000, maxSpeed = 4095, maxPwm = 4095, minPwm = -4095, maxSpeeeed = 15000, minSpeed = 3000, speedAdjust = 500;
+const double kp = 10, ki = 0, kd = 0, period = 0.01;
+const int intMax = 2000, intMin = -2000, maxSpeed = 4095, maxPwm = 4095, minPwm = -4095, maxSpeeeed = 10000, minSpeed = 3000;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -153,10 +157,7 @@ double updateEncoder(pidState *positions, int index)
 	int16_t diff = (int16_t)(__HAL_TIM_GET_COUNTER(motors[index].encTimer) - positions->prevPos);
 	positions->totalPos += diff;
 	positions->prevPos = __HAL_TIM_GET_COUNTER(motors[index].encTimer);
-	double output = (diff / period);
-	if (output > maxSpeeeed) output = maxSpeeeed;
-	else if (output < -maxSpeeeed) output = -maxSpeeeed;
-	return output;
+	return diff / period;
 }
 
 void OneWord(const int speed, const int direction, const int index)
@@ -172,6 +173,12 @@ void Stop()
 		PCA9685_SetPWM(motors[index].pin1, 0, 0);
 		PCA9685_SetPWM(motors[index].pin2, 0, 0);
 	}
+}
+
+void breaking(int index)
+{
+	PCA9685_SetPWM(motors[index].pin1, 0, 4095);
+	PCA9685_SetPWM(motors[index].pin2, 0, 4095);
 }
 
 void Sideways(const int speed, const int direction)
@@ -227,7 +234,7 @@ double updatePid(pidState *pid, double error, double velocity, int index)
 
 void onewordPid(int target)
 {
-	int targetSpeed = 0;
+	int targetSpeed = maxSpeeeed;
 	int breakDistance = 2500;
 	uint32_t prevTick = HAL_GetTick();
 	pidState motorState[4];
@@ -239,6 +246,9 @@ void onewordPid(int target)
 		motorState[index].intState = 0;
 		motorState[index].prevPos = 0;
 		motorState[index].totalPos = 0;
+		HAL_GPIO_WritePin(motors[index].rightEnPort, motors[index].rightEnPin, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(motors[index].leftEnPort, motors[index].leftEnPin, GPIO_PIN_SET);
+
 	}
 	while (!(motorState[0].reached && motorState[1].reached && motorState[2].reached && motorState[3].reached))
 	{
@@ -267,16 +277,14 @@ void onewordPid(int target)
 				if (distanceAway < 50 && distanceAway > -50)
 				{
 					motorState[index].reached = 1;
-					OneWord(0, FORWARD, index);
-					OneWord(0, BACKWARDS, index);
 					motorState[index].intState = 0;
+					breaking(index);
 				}
 				else motorState[index].reached = 0;
 			}
 			prevTick += 10;
 		}
 	}
-	Stop();
 }
 
 //void onewordPid(int target)
@@ -369,14 +377,15 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   for (int index = 0; index < 16; index++)
   {
+	  if (index < 4)
+	  {
+		  HAL_GPIO_WritePin(motors[index].rightEnPort, motors[index].rightEnPin, GPIO_PIN_SET);
+		  HAL_GPIO_WritePin(motors[index].leftEnPort, motors[index].leftEnPin, GPIO_PIN_SET);
+	  }
 	  PCA9685_SetPWM(index, 0, 0);
   }
   HAL_Delay(2000);
-  onewordPid(40107);
-  Sideways(2000, RIGHT);
-  HAL_Delay(2000);
-  Stop();
-  onewordPid(-40107);
+  onewordPid(55000);
   while (1)
   {
 	  //	  __HAL_TIM_SET_COMPARE(motors[1].pwmTimer, motors[1].channel, 500);
@@ -712,15 +721,32 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, topLeftR_EN_Pin|topLeftL_EN_Pin|topRightL_EN_Pin|topRightR_EN_Pin
+                          |bottomRightL_EN_Pin|bottomLeftR_EN_Pin|bottomRightR_EN_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(bottomLeftL_EN_GPIO_Port, bottomLeftL_EN_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : topLeftR_EN_Pin topLeftL_EN_Pin topRightL_EN_Pin topRightR_EN_Pin
+                           bottomRightL_EN_Pin bottomLeftR_EN_Pin bottomRightR_EN_Pin */
+  GPIO_InitStruct.Pin = topLeftR_EN_Pin|topLeftL_EN_Pin|topRightL_EN_Pin|topRightR_EN_Pin
+                          |bottomRightL_EN_Pin|bottomLeftR_EN_Pin|bottomRightR_EN_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
@@ -740,6 +766,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(rightIR_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : bottomLeftL_EN_Pin */
+  GPIO_InitStruct.Pin = bottomLeftL_EN_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(bottomLeftL_EN_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 

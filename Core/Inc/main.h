@@ -59,6 +59,14 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define B1_Pin GPIO_PIN_13
 #define B1_GPIO_Port GPIOC
+#define topLeftR_EN_Pin GPIO_PIN_0
+#define topLeftR_EN_GPIO_Port GPIOC
+#define topLeftL_EN_Pin GPIO_PIN_1
+#define topLeftL_EN_GPIO_Port GPIOC
+#define topRightL_EN_Pin GPIO_PIN_2
+#define topRightL_EN_GPIO_Port GPIOC
+#define topRightR_EN_Pin GPIO_PIN_3
+#define topRightR_EN_GPIO_Port GPIOC
 #define bottomRightEncA_Pin GPIO_PIN_0
 #define bottomRightEncA_GPIO_Port GPIOA
 #define bottomRightEncB_Pin GPIO_PIN_1
@@ -85,6 +93,14 @@ void Error_Handler(void);
 #define TCK_GPIO_Port GPIOA
 #define topLeftEncB_Pin GPIO_PIN_15
 #define topLeftEncB_GPIO_Port GPIOA
+#define bottomRightL_EN_Pin GPIO_PIN_10
+#define bottomRightL_EN_GPIO_Port GPIOC
+#define bottomLeftR_EN_Pin GPIO_PIN_11
+#define bottomLeftR_EN_GPIO_Port GPIOC
+#define bottomRightR_EN_Pin GPIO_PIN_12
+#define bottomRightR_EN_GPIO_Port GPIOC
+#define bottomLeftL_EN_Pin GPIO_PIN_2
+#define bottomLeftL_EN_GPIO_Port GPIOD
 #define topLeftEncA_Pin GPIO_PIN_3
 #define topLeftEncA_GPIO_Port GPIOB
 #define bottomLeftEncB_Pin GPIO_PIN_6
