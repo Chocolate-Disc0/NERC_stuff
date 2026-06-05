@@ -21,15 +21,15 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-volatile uint32_t rawVal2 = 0;
-volatile uint32_t rawVal3 = 0;
-volatile uint32_t rawVal4 = 0;
-volatile uint32_t rawVal5 = 0;
+int rawVal2 = 0;
+int rawVal3 = 0;
+int rawVal4 = 0;
+int rawVal5 = 0;
 int leftIr = 0;
 int middleIr = 0;
 int rightIr = 0;
@@ -84,13 +84,14 @@ TIM_HandleTypeDef htim5;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-const portsAndPins motors[4] = {{1, 0, topLeftR_EN_Pin, topLeftL_EN_Pin, topLeftR_EN_GPIO_Port, topLeftL_EN_GPIO_Port, 0.11, 0.033, 0, &htim2},
+//first ku = 2.75 and tu is 4.5
+const portsAndPins motors[4] = {{1, 0, topLeftR_EN_Pin, topLeftL_EN_Pin, topLeftR_EN_GPIO_Port, topLeftL_EN_GPIO_Port, 1.2375, 329.8949, 0, &htim2},
 							{2, 3, topRightR_EN_Pin, topRightL_EN_Pin, topRightR_EN_GPIO_Port, topRightL_EN_GPIO_Port, 0.1461, 0.048684, 0, &htim3},
 							{5, 4, bottomLeftR_EN_Pin, bottomLeftL_EN_Pin, bottomLeftR_EN_GPIO_Port, bottomLeftL_EN_GPIO_Port, 0.15136, 0.050456, 0, &htim4},
 							{6, 7, bottomRightR_EN_Pin, bottomRightL_EN_Pin, bottomRightR_EN_GPIO_Port, bottomRightL_EN_GPIO_Port, 0.2, 0.067, 0, &htim5}};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
-const double kp = 10, ki = 0, kd = 0, period = 0.01;
-const int intMax = 2000, intMin = -2000, maxSpeed = 4095, maxPwm = 4095, minPwm = -4095, maxSpeeeed = 10000, minSpeed = 3000;
+const double kp = 2.75, ki = 0, kd = 0, period = 0.01;
+const int intMax = 2000, intMin = -2000, maxSpeed = 4095, maxPwm = 4095, minPwm = -4095, maxSpeeeed = 5000, minSpeed = 1500;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -108,6 +109,12 @@ static void MX_I2C1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+int _write(int file, char *ptr, int len)
+{
+	HAL_UART_Transmit(&huart2, (uint8_t *)ptr, len, HAL_MAX_DELAY);
+	return len;
+}
 
 void PCA9685_SetBit(uint8_t Register, uint8_t Bit, uint8_t Value)
 {
@@ -252,15 +259,20 @@ void onewordPid(int target)
 	}
 	while (!(motorState[0].reached && motorState[1].reached && motorState[2].reached && motorState[3].reached))
 	{
-		if (HAL_GetTick() - prevTick >= 10)
+		if (HAL_GetTick() - prevTick >= period * 1000)
 		{
-			rawVal2 = ((__HAL_TIM_GET_COUNTER(motors[0].encTimer) - motorState[0].prevPos) / period);
-			rawVal3 = ((__HAL_TIM_GET_COUNTER(motors[1].encTimer) - motorState[1].prevPos) / period);
-			rawVal4 = ((__HAL_TIM_GET_COUNTER(motors[2].encTimer) - motorState[2].prevPos) / period);
-			rawVal5 = ((__HAL_TIM_GET_COUNTER(motors[3].encTimer) - motorState[3].prevPos) / period);
+//			rawVal2 = ((__HAL_TIM_GET_COUNTER(motors[0].encTimer) - motorState[0].prevPos) / period);
+//			rawVal3 = ((__HAL_TIM_GET_COUNTER(motors[1].encTimer) - motorState[1].prevPos) / period);
+//			rawVal4 = ((__HAL_TIM_GET_COUNTER(motors[2].encTimer) - motorState[2].prevPos) / period);
+//			rawVal5 = ((__HAL_TIM_GET_COUNTER(motors[3].encTimer) - motorState[3].prevPos) / period);
+			printf("%d,%d,%d,%d\n", rawVal2, rawVal3, rawVal4, rawVal5);
 			for (int index = 0; index < 4; index++)
 			{
 				double currentSpeed = updateEncoder(&motorState[index], index);
+				if (index == 0) rawVal2 = currentSpeed;
+				if (index == 1) rawVal3 = currentSpeed;
+				if (index == 2) rawVal4 = currentSpeed;
+				if (index == 3) rawVal5 = currentSpeed;
 				int distanceAway = target - motorState[index].totalPos;
 				if (distanceAway > breakDistance) targetSpeed = maxSpeeeed;
 				else if (distanceAway < -breakDistance) targetSpeed = -maxSpeeeed;
@@ -282,7 +294,7 @@ void onewordPid(int target)
 				}
 				else motorState[index].reached = 0;
 			}
-			prevTick += 10;
+			prevTick += period * 1000;
 		}
 	}
 }
@@ -362,6 +374,7 @@ int main(void)
   MX_TIM5_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
+  extern UART_HandleTypeDef huart2;
   PCA9685_Init(1526);
   HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_2);
@@ -385,7 +398,7 @@ int main(void)
 	  PCA9685_SetPWM(index, 0, 0);
   }
   HAL_Delay(2000);
-  onewordPid(55000);
+  onewordPid(20000);
   while (1)
   {
 	  //	  __HAL_TIM_SET_COMPARE(motors[1].pwmTimer, motors[1].channel, 500);
