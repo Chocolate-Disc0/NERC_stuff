@@ -36,7 +36,7 @@ int rightIr = 0;
 typedef struct
 {
 	double intState;
-	int drevState;
+	double drevState;
 	int reached;
 	int32_t totalPos;
 	uint32_t prevPos;
@@ -53,6 +53,7 @@ typedef struct
 	double kp;
 	double ki;
 	double kd;
+	double kf;
 	TIM_HandleTypeDef* encTimer;
 } portsAndPins;
 /* USER CODE END PTD */
@@ -84,14 +85,14 @@ TIM_HandleTypeDef htim5;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-//first ku = 2.75 and tu is 4.5
-const portsAndPins motors[4] = {{1, 0, topLeftR_EN_Pin, topLeftL_EN_Pin, topLeftR_EN_GPIO_Port, topLeftL_EN_GPIO_Port, 1.2375, 329.8949, 0, &htim2},
-							{2, 3, topRightR_EN_Pin, topRightL_EN_Pin, topRightR_EN_GPIO_Port, topRightL_EN_GPIO_Port, 0.1461, 0.048684, 0, &htim3},
-							{5, 4, bottomLeftR_EN_Pin, bottomLeftL_EN_Pin, bottomLeftR_EN_GPIO_Port, bottomLeftL_EN_GPIO_Port, 0.15136, 0.050456, 0, &htim4},
-							{6, 7, bottomRightR_EN_Pin, bottomRightL_EN_Pin, bottomRightR_EN_GPIO_Port, bottomRightL_EN_GPIO_Port, 0.2, 0.067, 0, &htim5}};
+//first ku = 2.75 and tu is 4.50143 second ku = 3.45 and tu is 4.5162 third ku is 3.35 and tu is 4.730475 foruth ku = 3.15 and tu = 4.5153
+const portsAndPins motors[4] = {{1, 0, topLeftR_EN_Pin, topLeftL_EN_Pin, topLeftR_EN_GPIO_Port, topLeftL_EN_GPIO_Port, 1.2375, 32.98949, 0, 0.256, &htim2},
+							{2, 3, topRightR_EN_Pin, topRightL_EN_Pin, topRightR_EN_GPIO_Port, topRightL_EN_GPIO_Port, 1.5525, 41.251495, 0, 0.276,&htim3},
+							{5, 4, bottomLeftR_EN_Pin, bottomLeftL_EN_Pin, bottomLeftR_EN_GPIO_Port, bottomLeftL_EN_GPIO_Port, 1.5075, 38.2414, 0, 0.248,&htim4},
+							{6, 7, bottomRightR_EN_Pin, bottomRightL_EN_Pin, bottomRightR_EN_GPIO_Port, bottomRightL_EN_GPIO_Port, 1.4175, 37.671915, 0, 0.276,&htim5}};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
-const double kp = 2.75, ki = 0, kd = 0, period = 0.01;
-const int intMax = 2000, intMin = -2000, maxSpeed = 4095, maxPwm = 4095, minPwm = -4095, maxSpeeeed = 5000, minSpeed = 1500;
+const double kpp = 3.15, kii = 0, kdd = 0, period = 0.01;
+const int intMax = 40, intMin = -40, maxSpeed = 4095, maxPwm = 4095, minPwm = -4095, maxSpeeeed = 5000, minSpeed = 1500;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -161,9 +162,10 @@ void PCA9685_SetPWM(uint8_t Channel, uint16_t OnTime, uint16_t OffTime)
 
 double updateEncoder(pidState *positions, int index)
 {
-	int16_t diff = (int16_t)(__HAL_TIM_GET_COUNTER(motors[index].encTimer) - positions->prevPos);
+	int16_t current = __HAL_TIM_GET_COUNTER(motors[index].encTimer);
+	int16_t diff = (int16_t)(current - positions->prevPos);
 	positions->totalPos += diff;
-	positions->prevPos = __HAL_TIM_GET_COUNTER(motors[index].encTimer);
+	positions->prevPos = current;
 	return diff / period;
 }
 
@@ -226,17 +228,14 @@ void Sideways(const int speed, const int direction)
 double updatePid(pidState *pid, double error, double velocity, int index)
 {
 	double propVal = 0, intVal = 0, dervVal = 0;
-	propVal = kp * error;
+	propVal = motors[index].kp * error;
 	pid->intState += error * period;
-	dervVal = kd * ((pid->drevState - velocity) / period);
+	dervVal = motors[index].kd * ((pid->drevState - velocity) / period);
 	pid->intState = pid->intState > intMax ? intMax : pid->intState;
 	pid->intState = pid->intState < intMin ? intMin : pid->intState;
-	intVal = pid->intState * ki;
+	intVal = pid->intState * motors[index].ki;
 	pid->drevState = velocity;
-	double output = propVal + intVal + dervVal;
-	output = output > maxPwm ? maxPwm : output;
-	output = output < minPwm ? minPwm : output;
-	return output;
+	return propVal + intVal + dervVal;
 }
 
 void onewordPid(int target)
@@ -259,7 +258,7 @@ void onewordPid(int target)
 	}
 	while (!(motorState[0].reached && motorState[1].reached && motorState[2].reached && motorState[3].reached))
 	{
-		if (HAL_GetTick() - prevTick >= period * 1000)
+		if (HAL_GetTick() - prevTick >= (uint32_t)(period * 1000))
 		{
 //			rawVal2 = ((__HAL_TIM_GET_COUNTER(motors[0].encTimer) - motorState[0].prevPos) / period);
 //			rawVal3 = ((__HAL_TIM_GET_COUNTER(motors[1].encTimer) - motorState[1].prevPos) / period);
@@ -273,6 +272,7 @@ void onewordPid(int target)
 				if (index == 1) rawVal3 = currentSpeed;
 				if (index == 2) rawVal4 = currentSpeed;
 				if (index == 3) rawVal5 = currentSpeed;
+				if (motorState[index].reached) continue;
 				int distanceAway = target - motorState[index].totalPos;
 				if (distanceAway > breakDistance) targetSpeed = maxSpeeeed;
 				else if (distanceAway < -breakDistance) targetSpeed = -maxSpeeeed;
@@ -283,9 +283,9 @@ void onewordPid(int target)
 					if (targetSpeed < 0 && targetSpeed > -minSpeed) targetSpeed = -minSpeed;
 				}
 				int error = targetSpeed - currentSpeed;
-				double pwmVal = updatePid(&motorState[index], error, currentSpeed, index);
-				int absPwm = pwmVal < 0 ? pwmVal * -1 : pwmVal;
-				OneWord(absPwm, pwmVal < 0 ? BACKWARDS : FORWARD, index);
+				double pwmVal = updatePid(&motorState[index], error, currentSpeed, index) + (motors[index].kf * targetSpeed);
+				int absPwm = (int)(pwmVal < 0 ? -pwmVal : pwmVal);
+				OneWord(absPwm > maxPwm ? maxPwm : absPwm, pwmVal < 0 ? BACKWARDS : FORWARD, index);
 				if (distanceAway < 50 && distanceAway > -50)
 				{
 					motorState[index].reached = 1;
@@ -294,7 +294,7 @@ void onewordPid(int target)
 				}
 				else motorState[index].reached = 0;
 			}
-			prevTick += period * 1000;
+			prevTick += (uint32_t)(period * 1000);
 		}
 	}
 }
