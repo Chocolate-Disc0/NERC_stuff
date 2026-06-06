@@ -39,7 +39,7 @@ typedef struct
 	double drevState;
 	int reached;
 	int32_t totalPos;
-	uint32_t prevPos;
+	uint16_t prevPos;
 } pidState;
 
 typedef struct
@@ -86,13 +86,15 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 //first ku = 2.75 and tu is 4.50143 second ku = 3.45 and tu is 4.5162 third ku is 3.35 and tu is 4.730475 foruth ku = 3.15 and tu = 4.5153
-const portsAndPins motors[4] = {{1, 0, topLeftR_EN_Pin, topLeftL_EN_Pin, topLeftR_EN_GPIO_Port, topLeftL_EN_GPIO_Port, 1.2375, 32.98949, 0, 0.256, &htim2},
-							{2, 3, topRightR_EN_Pin, topRightL_EN_Pin, topRightR_EN_GPIO_Port, topRightL_EN_GPIO_Port, 1.5525, 41.251495, 0, 0.276,&htim3},
-							{5, 4, bottomLeftR_EN_Pin, bottomLeftL_EN_Pin, bottomLeftR_EN_GPIO_Port, bottomLeftL_EN_GPIO_Port, 1.5075, 38.2414, 0, 0.248,&htim4},
-							{6, 7, bottomRightR_EN_Pin, bottomRightL_EN_Pin, bottomRightR_EN_GPIO_Port, bottomRightL_EN_GPIO_Port, 1.4175, 37.671915, 0, 0.276,&htim5}};
+//first ku = 3.85 and tu is 7.49915 second ku = 4.4 and tu is 7.34447 third ku is 4.35 and tu is 7.7961 foruth ku = 3.9 and tu = 7.39478
+const portsAndPins motors[4] = {{1, 0, topLeftR_EN_Pin, topLeftL_EN_Pin, topLeftR_EN_GPIO_Port, topLeftL_EN_GPIO_Port, 1.7325, 27.723, 0, 0.256, &htim2},
+							{2, 3, topRightR_EN_Pin, topRightL_EN_Pin, topRightR_EN_GPIO_Port, topRightL_EN_GPIO_Port, 1.98, 32.371, 0, 0.276,&htim3},
+							{5, 4, bottomLeftR_EN_Pin, bottomLeftL_EN_Pin, bottomLeftR_EN_GPIO_Port, bottomLeftL_EN_GPIO_Port, 1.9575, 30.130, 0, 0.248,&htim4},
+							{6, 7, bottomRightR_EN_Pin, bottomRightL_EN_Pin, bottomRightR_EN_GPIO_Port, bottomRightL_EN_GPIO_Port, 1.755, 28.480, 0, 0.276,&htim5}};
+const int adjustedTargetRatios[3][4] = {{1, 1, 1, 1}, {1, -1, -1, 1}, {1, -1, 1, -1}};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
-const double kpp = 3.15, kii = 0, kdd = 0, period = 0.01;
-const int intMax = 40, intMin = -40, maxSpeed = 4095, maxPwm = 4095, minPwm = -4095, maxSpeeeed = 5000, minSpeed = 1500;
+const double kpp = 3.9, kii = 0, kdd = 0, period = 0.01, alpha = 0.3;
+const int intMax = 40, maxPwm = 4095, maxSpeeeed = 15000, minSpeed = 1500, speedAdjust = 500, breakDistance = 7500;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -166,16 +168,16 @@ double updateEncoder(pidState *positions, int index)
 	int16_t diff = (int16_t)(current - positions->prevPos);
 	positions->totalPos += diff;
 	positions->prevPos = current;
-	return diff / period;
+	return (diff / period) * alpha + ((1 - alpha) * positions->drevState);
 }
 
-void OneWord(const int speed, const int direction, const int index)
+void oneWord(int speed, int direction, int index)
 {
 	PCA9685_SetPWM(motors[index].pin1, 0, direction == FORWARD ? speed : 0);
 	PCA9685_SetPWM(motors[index].pin2, 0, direction == FORWARD ? 0 : speed);
 }
 
-void Stop()
+void stop()
 {
 	for (int index = 0; index < 4; index++)
 	{
@@ -190,21 +192,32 @@ void breaking(int index)
 	PCA9685_SetPWM(motors[index].pin2, 0, 4095);
 }
 
-void Sideways(const int speed, const int direction)
+void sideways(int speed, int direction, int index)
 {
-	for (int index = 0; index < 4; index++)
+	if (index == 0 || index == 3)
 	{
-		if (index == 0 || index == 3)
-		{
-			PCA9685_SetPWM(motors[index].pin1, 0, direction == FORWARD ? speed : 0);
-			PCA9685_SetPWM(motors[index].pin2, 0, direction == FORWARD ? 0 : speed);
-		}
-		else
-		{
-			PCA9685_SetPWM(motors[index].pin1, 0, direction == FORWARD ? 0 : speed);
-			PCA9685_SetPWM(motors[index].pin2, 0, direction == FORWARD ? speed : 0);
-		}
-    }
+		PCA9685_SetPWM(motors[index].pin1, 0, direction == RIGHT ? speed : 0);
+		PCA9685_SetPWM(motors[index].pin2, 0, direction == RIGHT ? 0 : speed);
+	}
+	else
+	{
+		PCA9685_SetPWM(motors[index].pin1, 0, direction == RIGHT ? 0 : speed);
+		PCA9685_SetPWM(motors[index].pin2, 0, direction == RIGHT ? speed : 0);
+	}
+}
+
+void rotate(int speed, int direction, int index)
+{
+	if (index == 0 || index == 2)
+	{
+		PCA9685_SetPWM(motors[index].pin1, 0, direction == RIGHT ? speed : 0);
+		PCA9685_SetPWM(motors[index].pin2, 0, direction == RIGHT ? 0 : speed);
+	}
+	else
+	{
+		PCA9685_SetPWM(motors[index].pin1, 0, direction == RIGHT ? 0 : speed);
+		PCA9685_SetPWM(motors[index].pin2, 0, direction == RIGHT ? speed : 0);
+	}
 }
 //
 //void Diagonal(const int speed, const int sidewayDir, const int oneWayDir)
@@ -230,18 +243,20 @@ double updatePid(pidState *pid, double error, double velocity, int index)
 	double propVal = 0, intVal = 0, dervVal = 0;
 	propVal = motors[index].kp * error;
 	pid->intState += error * period;
-	dervVal = motors[index].kd * ((pid->drevState - velocity) / period);
+	dervVal = motors[index].kd * ((velocity - pid->drevState) / period);
 	pid->intState = pid->intState > intMax ? intMax : pid->intState;
-	pid->intState = pid->intState < intMin ? intMin : pid->intState;
+	pid->intState = pid->intState < -intMax ? -intMax : pid->intState;
 	intVal = pid->intState * motors[index].ki;
 	pid->drevState = velocity;
 	return propVal + intVal + dervVal;
 }
 
-void onewordPid(int target)
+void onewordPid(int target, int mode)
 {
+//	if (mode == 2) target = 9750;
+//	if (mode == 3) target = 4875;
 	int targetSpeed = maxSpeeeed;
-	int breakDistance = 2500;
+	int adjustRatio = 0;
 	uint32_t prevTick = HAL_GetTick();
 	pidState motorState[4];
 	for (int index = 0; index < 4; index++)
@@ -260,11 +275,20 @@ void onewordPid(int target)
 	{
 		if (HAL_GetTick() - prevTick >= (uint32_t)(period * 1000))
 		{
-//			rawVal2 = ((__HAL_TIM_GET_COUNTER(motors[0].encTimer) - motorState[0].prevPos) / period);
-//			rawVal3 = ((__HAL_TIM_GET_COUNTER(motors[1].encTimer) - motorState[1].prevPos) / period);
-//			rawVal4 = ((__HAL_TIM_GET_COUNTER(motors[2].encTimer) - motorState[2].prevPos) / period);
-//			rawVal5 = ((__HAL_TIM_GET_COUNTER(motors[3].encTimer) - motorState[3].prevPos) / period);
+//			if (mode == 0)
+//			{
+//				leftIr = HAL_GPIO_ReadPin(leftIR_GPIO_Port, leftIR_Pin);
+//				middleIr = HAL_GPIO_ReadPin(middleIR_GPIO_Port, middleIR_Pin);
+//				rightIr = HAL_GPIO_ReadPin(rightIR_GPIO_Port, rightIR_Pin);
+//				if (leftIr && !middleIr) adjustRatio = 2;
+//				else if (leftIr && middleIr) adjustRatio = 1;
+//				else if (rightIr && !middleIr) adjustRatio = -2;
+//				else if (rightIr && middleIr) adjustRatio = -1;
+//				else adjustRatio = 0;
+//			}
+
 			printf("%d,%d,%d,%d\n", rawVal2, rawVal3, rawVal4, rawVal5);
+
 			for (int index = 0; index < 4; index++)
 			{
 				double currentSpeed = updateEncoder(&motorState[index], index);
@@ -273,7 +297,9 @@ void onewordPid(int target)
 				if (index == 2) rawVal4 = currentSpeed;
 				if (index == 3) rawVal5 = currentSpeed;
 				if (motorState[index].reached) continue;
-				int distanceAway = target - motorState[index].totalPos;
+
+
+				int distanceAway = (target * adjustedTargetRatios[mode][index]) - motorState[index].totalPos;
 				if (distanceAway > breakDistance) targetSpeed = maxSpeeeed;
 				else if (distanceAway < -breakDistance) targetSpeed = -maxSpeeeed;
 				else
@@ -282,10 +308,17 @@ void onewordPid(int target)
 					if (targetSpeed > 0 && targetSpeed < minSpeed) targetSpeed = minSpeed;
 					if (targetSpeed < 0 && targetSpeed > -minSpeed) targetSpeed = -minSpeed;
 				}
+
+//				if (adjustRatio && mode == 1 && (index == 0 || index == 2)) targetSpeed += speedAdjust * adjustRatio;
+//				else if (adjustRatio && mode == 1) targetSpeed += -(speedAdjust * adjustRatio);
+
 				int error = targetSpeed - currentSpeed;
 				double pwmVal = updatePid(&motorState[index], error, currentSpeed, index) + (motors[index].kf * targetSpeed);
 				int absPwm = (int)(pwmVal < 0 ? -pwmVal : pwmVal);
-				OneWord(absPwm > maxPwm ? maxPwm : absPwm, pwmVal < 0 ? BACKWARDS : FORWARD, index);
+				oneWord(absPwm > maxPwm ? maxPwm : absPwm, pwmVal < 0 ? BACKWARDS : FORWARD, index);
+//				else if (mode == 1) sideways(absPwm > maxPwm ? maxPwm : absPwm, pwmVal < 0 ? LEFT : RIGHT, index);
+//				else if (mode == 2) rotate(absPwm > maxPwm ? maxPwm : absPwm, pwmVal < 0 ? LEFT : RIGHT, index);
+
 				if (distanceAway < 50 && distanceAway > -50)
 				{
 					motorState[index].reached = 1;
@@ -297,6 +330,7 @@ void onewordPid(int target)
 			prevTick += (uint32_t)(period * 1000);
 		}
 	}
+	stop();
 }
 
 //void onewordPid(int target)
@@ -397,8 +431,18 @@ int main(void)
 	  }
 	  PCA9685_SetPWM(index, 0, 0);
   }
-  HAL_Delay(2000);
-  onewordPid(20000);
+  //29400 for rotation
+  HAL_Delay(500);
+  onewordPid(40748.758, 0);
+//  onewordPid(30561.56, 0);
+//  onewordPid(-9750, 2);
+//  onewordPid(40748.758, 0);
+//  onewordPid(-9750, 2);
+//  onewordPid(20374.379, 0);
+//  onewordPid(9750, 2);
+//  onewordPid(40748.75, 0);
+//  onewordPid(9750, 2);
+//  onewordPid(10187.189, 0);
   while (1)
   {
 	  //	  __HAL_TIM_SET_COMPARE(motors[1].pwmTimer, motors[1].channel, 500);
