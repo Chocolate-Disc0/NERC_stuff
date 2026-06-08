@@ -65,7 +65,7 @@ typedef struct
 	GPIO_TypeDef * middlePort;
 	uint16_t rightPin;
 	GPIO_TypeDef * rightPort;
-} irSensors;
+} irPins;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -101,10 +101,10 @@ const portsAndPins motors[4] = {{0, 1, topLeftR_EN_Pin, topLeftL_EN_Pin, topLeft
 							{2, 3, topRightR_EN_Pin, topRightL_EN_Pin, topRightR_EN_GPIO_Port, topRightL_EN_GPIO_Port, 1.98, 32.371, 0, 0.276,&htim3},
 							{4, 5, bottomLeftR_EN_Pin, bottomLeftL_EN_Pin, bottomLeftR_EN_GPIO_Port, bottomLeftL_EN_GPIO_Port, 1.9575, 30.130, 0, 0.248,&htim4},
 							{6, 7, bottomRightR_EN_Pin, bottomRightL_EN_Pin, bottomRightR_EN_GPIO_Port, bottomRightL_EN_GPIO_Port, 1.755, 28.480, 0, 0.276,&htim5}};
-const irSensors ir[4] = {{frontLeftIR_Pin, frontLeftIR_GPIO_Port, frontMiddleIR_Pin, frontMiddleIR_GPIO_Port, frontRightIR_Pin, frontRightIR_GPIO_Port},
+const irPins irSensors[4] = {{frontLeftIR_Pin, frontLeftIR_GPIO_Port, frontMiddleIR_Pin, frontMiddleIR_GPIO_Port, frontRightIR_Pin, frontRightIR_GPIO_Port},
+						{rightLeftIR_Pin, rightLeftIR_GPIO_Port, rightMiddleIR_Pin, rightMiddleIR_GPIO_Port, rightRightIr_Pin, rightRightIr_GPIO_Port},
 						{backLeftIR_Pin, backLeftIR_GPIO_Port, backMiddleIR_Pin, backMiddleIR_GPIO_Port, backRightIR_Pin, backRightIR_GPIO_Port},
-						{leftLeftIR_Pin, leftLeftIR_GPIO_Port, leftMiddleIR_Pin, leftMiddleIR_GPIO_Port, leftRightIr_Pin, leftRightIr_GPIO_Port},
-						{rightLeftIR_Pin, rightLeftIR_GPIO_Port, rightMiddleIR_Pin, rightMiddleIR_GPIO_Port, rightRightIr_Pin, rightRightIr_GPIO_Port}};
+						{leftLeftIR_Pin, leftLeftIR_GPIO_Port, leftMiddleIR_Pin, leftMiddleIR_GPIO_Port, leftRightIr_Pin, leftRightIr_GPIO_Port}};
 const int adjustedTargetRatios[3][4] = {{1, 1, 1, 1}, {1, -1, -1, 1}, {1, -1, 1, -1}};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
 const double kpp = 3.9, kii = 0, kdd = 0, period = 0.01, alpha = 0.3;
@@ -262,7 +262,7 @@ double updatePid(pidState *pid, double error, double velocity, int index)
 	pid->intState = pid->intState < -intMax ? -intMax : pid->intState;
 	intVal = pid->intState * motors[index].ki;
 	pid->drevState = velocity;
-	return propVal + intVal + dervVal;
+	return propVal + intVal + dervVal;//				absPwm = 4095; pwmVal = 4095;
 }
 
 void onewordPid(int target, int mode)
@@ -289,9 +289,10 @@ void onewordPid(int target, int mode)
 		{
 //			if (mode == 0)
 //			{
-//				leftIr = HAL_GPIO_ReadPin(leftIR_GPIO_Port, leftIR_Pin);
-//				middleIr = HAL_GPIO_ReadPin(middleIR_GPIO_Port, middleIR_Pin);
-//				rightIr = HAL_GPIO_ReadPin(rightIR_GPIO_Port, rightIR_Pin);
+//				irPins irRay = irSensors[mode + (target < 0 ? 2 : 0)];
+//				leftIr = HAL_GPIO_ReadPin(irRay.leftPort, irRay.leftPin);
+//				middleIr = HAL_GPIO_ReadPin(irRay.middlePort, irRay.middlePin);
+//				rightIr = HAL_GPIO_ReadPin(irRay.rightPort, irRay.rightPin);
 //				if (leftIr && !middleIr) adjustRatio = -2;
 //				else if (leftIr && middleIr && !rightIr) adjustRatio = -1;
 //				else if (rightIr && !middleIr) adjustRatio = 2;
@@ -333,7 +334,7 @@ void onewordPid(int target, int mode)
 				int error = targetSpeed - currentSpeed;
 				double pwmVal = updatePid(&motorState[index], error, currentSpeed, index) + (motors[index].kf * targetSpeed);
 				int absPwm = (int)(pwmVal < 0 ? -pwmVal : pwmVal);
-//				absPwm = maxPwm; pwmVal = maxPwm;
+				absPwm = 4097; pwmVal = 4097;
 				oneWord(absPwm > maxPwm ? maxPwm : absPwm, pwmVal < 0 ? BACKWARDS : FORWARD, index);
 
 				if (distanceAway < 50 && distanceAway > -50)
@@ -452,7 +453,7 @@ int main(void)
   HAL_Delay(2000);
 //  onewordPid(-55000, 1);
 
-//  onewordPid(61123.13758, 0);
+  onewordPid(61123.13758, 0);
 ///  onewordPid(2 * quarterTurn, 2);
 //  onewordPid(20374.379, 0);
 //  onewordPid(2 * quarterTurn, 2);
@@ -467,7 +468,7 @@ int main(void)
   {
 	  leftIr = HAL_GPIO_ReadPin(frontLeftIR_GPIO_Port, frontLeftIR_Pin);
 	  middleIr = HAL_GPIO_ReadPin(frontMiddleIR_GPIO_Port, frontMiddleIR_Pin);
-	  rightIr = HAL_GPIO_ReadPin(rightRightIr_GPIO_Port, frontRightIR_Pin);
+	  rightIr = HAL_GPIO_ReadPin(frontRightIR_GPIO_Port, frontRightIR_Pin);
 	  //	  __HAL_TIM_SET_COMPARE(motors[1].pwmTimer, motors[1].channel, 500);
 	  //	  HAL_GPIO_WritePin(motors[1].pin1Port, motors[1].pin1Pin, GPIO_PIN_SET);
 	  //	  HAL_GPIO_WritePin(motors[1].pin2Port, motors[1].pin2Pin, GPIO_PIN_RESET);
