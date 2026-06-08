@@ -56,6 +56,16 @@ typedef struct
 	double kf;
 	TIM_HandleTypeDef* encTimer;
 } portsAndPins;
+
+typedef struct
+{
+	uint16_t leftPin;
+	GPIO_TypeDef * leftPort;
+	uint16_t middlePin;
+	GPIO_TypeDef * middlePort;
+	uint16_t rightPin;
+	GPIO_TypeDef * rightPort;
+} irSensors;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -87,10 +97,14 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 //first ku = 2.75 and tu is 4.50143 second ku = 3.45 and tu is 4.5162 third ku is 3.35 and tu is 4.730475 foruth ku = 3.15 and tu = 4.5153
 //first ku = 3.85 and tu is 7.49915 second ku = 4.4 and tu is 7.34447 third ku is 4.35 and tu is 7.7961 foruth ku = 3.9 and tu = 7.39478
-const portsAndPins motors[4] = {{1, 0, topLeftR_EN_Pin, topLeftL_EN_Pin, topLeftR_EN_GPIO_Port, topLeftL_EN_GPIO_Port, 1.7325, 27.723, 0, 0.256, &htim2},
+const portsAndPins motors[4] = {{0, 1, topLeftR_EN_Pin, topLeftL_EN_Pin, topLeftR_EN_GPIO_Port, topLeftL_EN_GPIO_Port, 1.7325, 27.723, 0, 0.256, &htim2},
 							{2, 3, topRightR_EN_Pin, topRightL_EN_Pin, topRightR_EN_GPIO_Port, topRightL_EN_GPIO_Port, 1.98, 32.371, 0, 0.276,&htim3},
-							{5, 4, bottomLeftR_EN_Pin, bottomLeftL_EN_Pin, bottomLeftR_EN_GPIO_Port, bottomLeftL_EN_GPIO_Port, 1.9575, 30.130, 0, 0.248,&htim4},
+							{4, 5, bottomLeftR_EN_Pin, bottomLeftL_EN_Pin, bottomLeftR_EN_GPIO_Port, bottomLeftL_EN_GPIO_Port, 1.9575, 30.130, 0, 0.248,&htim4},
 							{6, 7, bottomRightR_EN_Pin, bottomRightL_EN_Pin, bottomRightR_EN_GPIO_Port, bottomRightL_EN_GPIO_Port, 1.755, 28.480, 0, 0.276,&htim5}};
+const irSensors ir[4] = {{frontLeftIR_Pin, frontLeftIR_GPIO_Port, frontMiddleIR_Pin, frontMiddleIR_GPIO_Port, frontRightIR_Pin, frontRightIR_GPIO_Port},
+						{backLeftIR_Pin, backLeftIR_GPIO_Port, backMiddleIR_Pin, backMiddleIR_GPIO_Port, backRightIR_Pin, backRightIR_GPIO_Port},
+						{leftLeftIR_Pin, leftLeftIR_GPIO_Port, leftMiddleIR_Pin, leftMiddleIR_GPIO_Port, leftRightIr_Pin, leftRightIr_GPIO_Port},
+						{rightLeftIR_Pin, rightLeftIR_GPIO_Port, rightMiddleIR_Pin, rightMiddleIR_GPIO_Port, rightRightIr_Pin, rightRightIr_GPIO_Port}};
 const int adjustedTargetRatios[3][4] = {{1, 1, 1, 1}, {1, -1, -1, 1}, {1, -1, 1, -1}};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
 const double kpp = 3.9, kii = 0, kdd = 0, period = 0.01, alpha = 0.3;
@@ -273,17 +287,17 @@ void onewordPid(int target, int mode)
 	{
 		if (HAL_GetTick() - prevTick >= (uint32_t)(period * 1000))
 		{
-			if (mode == 0)
-			{
-				leftIr = HAL_GPIO_ReadPin(leftIR_GPIO_Port, leftIR_Pin);
-				middleIr = HAL_GPIO_ReadPin(middleIR_GPIO_Port, middleIR_Pin);
-				rightIr = HAL_GPIO_ReadPin(rightIR_GPIO_Port, rightIR_Pin);
-				if (leftIr && !middleIr) adjustRatio = -2;
-				else if (leftIr && middleIr && !rightIr) adjustRatio = -1;
-				else if (rightIr && !middleIr) adjustRatio = 2;
-				else if (rightIr && middleIr && !leftIr) adjustRatio = 1;
-				else adjustRatio = 0;
-			}
+//			if (mode == 0)
+//			{
+//				leftIr = HAL_GPIO_ReadPin(leftIR_GPIO_Port, leftIR_Pin);
+//				middleIr = HAL_GPIO_ReadPin(middleIR_GPIO_Port, middleIR_Pin);
+//				rightIr = HAL_GPIO_ReadPin(rightIR_GPIO_Port, rightIR_Pin);
+//				if (leftIr && !middleIr) adjustRatio = -2;
+//				else if (leftIr && middleIr && !rightIr) adjustRatio = -1;
+//				else if (rightIr && !middleIr) adjustRatio = 2;
+//				else if (rightIr && middleIr && !leftIr) adjustRatio = 1;
+//				else adjustRatio = 0;
+//			}
 			int32_t averagePosition = ((motorState[0].totalPos * adjustedTargetRatios[mode][0]) +
 										(motorState[1].totalPos * adjustedTargetRatios[mode][1]) +
 										(motorState[2].totalPos * adjustedTargetRatios[mode][2]) +
@@ -436,23 +450,24 @@ int main(void)
   }
   //29400 for rotation
   HAL_Delay(2000);
+//  onewordPid(-55000, 1);
+
 //  onewordPid(61123.13758, 0);
-  onewordPid(20374.379, 0);
-  onewordPid(2 * quarterTurn, 2);
-  onewordPid(20374.379, 0);
-  onewordPid(2 * quarterTurn, 2);
-  onewordPid(20374.379, 0);
-  onewordPid(-2 * quarterTurn, 2);
-  onewordPid(61123.137, 0);
-  onewordPid(-2 * quarterTurn, 2);
-  onewordPid(10187.189, 0);
-  onewordPid(-quarterTurn, 2);
-  onewordPid(28813.7234, 0);
+///  onewordPid(2 * quarterTurn, 2);
+//  onewordPid(20374.379, 0);
+//  onewordPid(2 * quarterTurn, 2);
+//  onewordPid(20374.379, 0);
+//  onewordPid(-2 * quarterTurn, 2);
+//  onewordPid(61123.137, 0);
+//  onewordPid(-2 * quarterTurn, 2);
+//  onewordPid(10187.189, 0);
+//  onewordPid(-quarterTurn, 2);
+//  onewordPid(28813.7234, 0);
   while (1)
   {
-	  leftIr = HAL_GPIO_ReadPin(leftIR_GPIO_Port, leftIR_Pin);
-	  middleIr = HAL_GPIO_ReadPin(middleIR_GPIO_Port, middleIR_Pin);
-	  rightIr = HAL_GPIO_ReadPin(rightIR_GPIO_Port, rightIR_Pin);
+	  leftIr = HAL_GPIO_ReadPin(frontLeftIR_GPIO_Port, frontLeftIR_Pin);
+	  middleIr = HAL_GPIO_ReadPin(frontMiddleIR_GPIO_Port, frontMiddleIR_Pin);
+	  rightIr = HAL_GPIO_ReadPin(rightRightIr_GPIO_Port, frontRightIR_Pin);
 	  //	  __HAL_TIM_SET_COMPARE(motors[1].pwmTimer, motors[1].channel, 500);
 	  //	  HAL_GPIO_WritePin(motors[1].pin1Port, motors[1].pin1Pin, GPIO_PIN_SET);
 	  //	  HAL_GPIO_WritePin(motors[1].pin2Port, motors[1].pin2Pin, GPIO_PIN_RESET);
@@ -820,17 +835,25 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : middleIR_Pin leftIR_Pin */
-  GPIO_InitStruct.Pin = middleIR_Pin|leftIR_Pin;
+  /*Configure GPIO pins : leftRightIr_Pin leftMiddleIR_Pin leftLeftIR_Pin */
+  GPIO_InitStruct.Pin = leftRightIr_Pin|leftMiddleIR_Pin|leftLeftIR_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : backMiddleIR_Pin backRightIR_Pin rightLeftIR_Pin frontMiddleIR_Pin
+                           frontLeftIR_Pin backLeftIR_Pin */
+  GPIO_InitStruct.Pin = backMiddleIR_Pin|backRightIR_Pin|rightLeftIR_Pin|frontMiddleIR_Pin
+                          |frontLeftIR_Pin|backLeftIR_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : rightIR_Pin */
-  GPIO_InitStruct.Pin = rightIR_Pin;
+  /*Configure GPIO pins : frontRightIR_Pin rightMiddleIR_Pin rightRightIr_Pin */
+  GPIO_InitStruct.Pin = frontRightIR_Pin|rightMiddleIR_Pin|rightRightIr_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(rightIR_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : bottomLeftL_EN_Pin */
   GPIO_InitStruct.Pin = bottomLeftL_EN_Pin;
