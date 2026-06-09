@@ -105,10 +105,11 @@ const irPins irSensors[4] = {{frontLeftIR_Pin, frontLeftIR_GPIO_Port, frontMiddl
 						{rightLeftIR_Pin, rightLeftIR_GPIO_Port, rightMiddleIR_Pin, rightMiddleIR_GPIO_Port, rightRightIr_Pin, rightRightIr_GPIO_Port},
 						{backLeftIR_Pin, backLeftIR_GPIO_Port, backMiddleIR_Pin, backMiddleIR_GPIO_Port, backRightIR_Pin, backRightIR_GPIO_Port},
 						{leftLeftIR_Pin, leftLeftIR_GPIO_Port, leftMiddleIR_Pin, leftMiddleIR_GPIO_Port, leftRightIr_Pin, leftRightIr_GPIO_Port}};
-const int adjustedTargetRatios[3][4] = {{1, 1, 1, 1}, {1, -1, -1, 1}, {1, -1, 1, -1}};
+const int adjustedTargetRatios[4][4] = {{1, 1, 1, 1}, {1, -1, -1, 1}, {1, -1, 1, -1}, {0, 1, 1, 0}};
+const double distanceAdjust[4] = {1, 1.01, 1, 1.27};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
 const double kpp = 3.9, kii = 0, kdd = 0, period = 0.01, alpha = 0.3;
-const int intMax = 40, maxPwm = 4095, maxSpeeeed = 15000, minSpeed = 2000, speedAdjust = 750, breakDistance = 2000, quarterTurn = 4875;
+const int intMax = 40, maxPwm = 4095, maxSpeeeed = 14000, minSpeed = 2000, speedAdjust = 1000, breakDistance = 500, quarterTurn = 4875;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -262,11 +263,14 @@ double updatePid(pidState *pid, double error, double velocity, int index)
 	pid->intState = pid->intState < -intMax ? -intMax : pid->intState;
 	intVal = pid->intState * motors[index].ki;
 	pid->drevState = velocity;
-	return propVal + intVal + dervVal;//				absPwm = 4095; pwmVal = 4095;
+	return propVal + intVal + dervVal;
 }
 
-void onewordPid(int target, int mode)
+void onewordPid(double target, int mode, int irEnable, int junction)
 {
+	int prevJunc = 1;
+	int junctionCount = 0;
+	target = target * distanceAdjust[mode];
 	int targetSpeed = maxSpeeeed;
 	int adjustRatio = 0;
 	uint32_t prevTick = HAL_GetTick();
@@ -283,29 +287,38 @@ void onewordPid(int target, int mode)
 		HAL_GPIO_WritePin(motors[index].leftEnPort, motors[index].leftEnPin, GPIO_PIN_SET);
 
 	}
-	while (!(motorState[0].reached && motorState[1].reached && motorState[2].reached && motorState[3].reached))
+	while (1)
 	{
 		if (HAL_GetTick() - prevTick >= (uint32_t)(period * 1000))
 		{
-//			if (mode == 0)
-//			{
-//				irPins irRay = irSensors[mode + (target < 0 ? 2 : 0)];
-//				leftIr = HAL_GPIO_ReadPin(irRay.leftPort, irRay.leftPin);
-//				middleIr = HAL_GPIO_ReadPin(irRay.middlePort, irRay.middlePin);
-//				rightIr = HAL_GPIO_ReadPin(irRay.rightPort, irRay.rightPin);
-//				if (leftIr && !middleIr) adjustRatio = -2;
-//				else if (leftIr && middleIr && !rightIr) adjustRatio = -1;
-//				else if (rightIr && !middleIr) adjustRatio = 2;
-//				else if (rightIr && middleIr && !leftIr) adjustRatio = 1;
-//				else adjustRatio = 0;
-//			}
+			if ((mode == 0 || mode == 1) && irEnable)
+			{
+				irPins irRay = irSensors[mode + (target < 0 ? 2 : 0)];
+				leftIr = HAL_GPIO_ReadPin(irRay.leftPort, irRay.leftPin);
+				middleIr = HAL_GPIO_ReadPin(irRay.middlePort, irRay.middlePin);
+				rightIr = HAL_GPIO_ReadPin(irRay.rightPort, irRay.rightPin);
+				if (leftIr && !middleIr) adjustRatio = -2;
+				else if (leftIr && middleIr) adjustRatio = -1;
+				else if (rightIr && !middleIr) adjustRatio = 2;
+				else if (rightIr && middleIr) adjustRatio = 1;
+				else adjustRatio = 0;
+			}
+			if (junction)
+			{
+				irPins junctionIr = irSensors[(mode == 0 ? (junction < 0 ? 3 : 1) : (junction < 0 ? 0 : 2))];
+				if (!prevJunc && HAL_GPIO_ReadPin(junctionIr.middlePort, junctionIr.middlePin))
+				{
+					prevJunc = 1;
+					junctionCount++;
+				}
+				else if (prevJunc && !(HAL_GPIO_ReadPin(junctionIr.middlePort, junctionIr.middlePin))) prevJunc = 0;
+			}
 			int32_t averagePosition = ((motorState[0].totalPos * adjustedTargetRatios[mode][0]) +
 										(motorState[1].totalPos * adjustedTargetRatios[mode][1]) +
 										(motorState[2].totalPos * adjustedTargetRatios[mode][2]) +
-										(motorState[3].totalPos * adjustedTargetRatios[mode][3])) / 4;
+										(motorState[3].totalPos * adjustedTargetRatios[mode][3])) / (mode == 3 ? 2 : 4);
 
 			printf("%d,%d,%d,%d\n", rawVal2, rawVal3, rawVal4, rawVal5);
-
 			for (int index = 0; index < 4; index++)
 			{
 				double currentSpeed = updateEncoder(&motorState[index], index);
@@ -334,18 +347,23 @@ void onewordPid(int target, int mode)
 				int error = targetSpeed - currentSpeed;
 				double pwmVal = updatePid(&motorState[index], error, currentSpeed, index) + (motors[index].kf * targetSpeed);
 				int absPwm = (int)(pwmVal < 0 ? -pwmVal : pwmVal);
-				absPwm = 4097; pwmVal = 4097;
+//				absPwm = 4095; pwmVal = 4095;
 				oneWord(absPwm > maxPwm ? maxPwm : absPwm, pwmVal < 0 ? BACKWARDS : FORWARD, index);
 
 				if (distanceAway < 50 && distanceAway > -50)
 				{
 					motorState[index].reached = 1;
 					motorState[index].intState = 0;
-					breaking(index);
 				}
 				else motorState[index].reached = 0;
 			}
 			prevTick += (uint32_t)(period * 1000);
+		}
+		if ((!junction && (motorState[0].reached && motorState[1].reached && motorState[2].reached && motorState[3].reached)) ||
+			(junction && junctionCount == (junction < 0 ? -junction : junction)))
+		{
+			for (int index = 0; index < 4; index++) breaking(index);
+			break;
 		}
 	}
 	stop();
@@ -450,10 +468,10 @@ int main(void)
 	  PCA9685_SetPWM(index, 0, 0);
   }
   //29400 for rotation
-  HAL_Delay(2000);
-//  onewordPid(-55000, 1);
+  HAL_Delay(500);
+//  onewordPid(60000,0, 0);
 
-  onewordPid(61123.13758, 0);
+//  onewordPid(25043.50776, 0);
 ///  onewordPid(2 * quarterTurn, 2);
 //  onewordPid(20374.379, 0);
 //  onewordPid(2 * quarterTurn, 2);
@@ -464,11 +482,28 @@ int main(void)
 //  onewordPid(10187.189, 0);
 //  onewordPid(-quarterTurn, 2);
 //  onewordPid(28813.7234, 0);
+
+//  onewordPid(-20374.379, 1, 1);
+
+  onewordPid(-25838.9641, 1, 1, 3);
+  onewordPid(20374.379, 0, 1, -2);
+  onewordPid(20374.379, 1, 1, -2);
+  onewordPid(61123.137, 0, 1, 6);
+  onewordPid(-10187.189, 1, 1, 1);
+  onewordPid(-10187.189, 0, 0, -1);
+  onewordPid(quarterTurn * -2, 2, 0, 0);
+  onewordPid(28813.7234, 3, 0, 0);
+  onewordPid(20374.379 * 1.30943, 0, 1, 1);
+
   while (1)
   {
-	  leftIr = HAL_GPIO_ReadPin(frontLeftIR_GPIO_Port, frontLeftIR_Pin);
-	  middleIr = HAL_GPIO_ReadPin(frontMiddleIR_GPIO_Port, frontMiddleIR_Pin);
-	  rightIr = HAL_GPIO_ReadPin(frontRightIR_GPIO_Port, frontRightIR_Pin);
+	  irPins irRay = irSensors[3];
+	  leftIr = HAL_GPIO_ReadPin(irRay.leftPort, irRay.leftPin);
+	  middleIr = HAL_GPIO_ReadPin(irRay.middlePort, irRay.middlePin);
+	  rightIr = HAL_GPIO_ReadPin(irRay.rightPort, irRay.rightPin);
+//	  leftIr = HAL_GPIO_ReadPin(frontLeftIR_GPIO_Port, frontLeftIR_Pin);
+//	  middleIr = HAL_GPIO_ReadPin(frontMiddleIR_GPIO_Port, frontMiddleIR_Pin);
+//	  rightIr = HAL_GPIO_ReadPin(frontRightIR_GPIO_Port, frontRightIR_Pin);
 	  //	  __HAL_TIM_SET_COMPARE(motors[1].pwmTimer, motors[1].channel, 500);
 	  //	  HAL_GPIO_WritePin(motors[1].pin1Port, motors[1].pin1Pin, GPIO_PIN_SET);
 	  //	  HAL_GPIO_WritePin(motors[1].pin2Port, motors[1].pin2Pin, GPIO_PIN_RESET);
