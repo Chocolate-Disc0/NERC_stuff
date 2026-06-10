@@ -33,6 +33,15 @@ volatile int rawVal5 = 0;
 volatile int leftIr = 0;
 volatile int middleIr = 0;
 volatile int rightIr = 0;
+
+uint16_t captureValueUp = 0;
+uint16_t previousCaptureValueUp = 0;
+uint32_t frequencyUp = 0;
+
+uint32_t captureValueDown = 0;
+uint32_t previousCaptureValueDown = 0;
+uint32_t frequencyDown = 0;
+
 typedef struct
 {
 	double intState;
@@ -91,6 +100,8 @@ TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim5;
+TIM_HandleTypeDef htim9;
+TIM_HandleTypeDef htim11;
 
 UART_HandleTypeDef huart2;
 
@@ -101,15 +112,18 @@ const portsAndPins motors[4] = {{0, 1, topLeftR_EN_Pin, topLeftL_EN_Pin, topLeft
 							{2, 3, topRightR_EN_Pin, topRightL_EN_Pin, topRightR_EN_GPIO_Port, topRightL_EN_GPIO_Port, 1.98, 32.371, 0, 0.276,&htim3},
 							{4, 5, bottomLeftR_EN_Pin, bottomLeftL_EN_Pin, bottomLeftR_EN_GPIO_Port, bottomLeftL_EN_GPIO_Port, 1.9575, 30.130, 0, 0.248,&htim4},
 							{6, 7, bottomRightR_EN_Pin, bottomRightL_EN_Pin, bottomRightR_EN_GPIO_Port, bottomRightL_EN_GPIO_Port, 1.755, 28.480, 0, 0.276,&htim5}};
+
 const irPins irSensors[4] = {{frontLeftIR_Pin, frontLeftIR_GPIO_Port, frontMiddleIR_Pin, frontMiddleIR_GPIO_Port, frontRightIR_Pin, frontRightIR_GPIO_Port},
 						{rightLeftIR_Pin, rightLeftIR_GPIO_Port, rightMiddleIR_Pin, rightMiddleIR_GPIO_Port, rightRightIr_Pin, rightRightIr_GPIO_Port},
 						{backLeftIR_Pin, backLeftIR_GPIO_Port, backMiddleIR_Pin, backMiddleIR_GPIO_Port, backRightIR_Pin, backRightIR_GPIO_Port},
 						{leftLeftIR_Pin, leftLeftIR_GPIO_Port, leftMiddleIR_Pin, leftMiddleIR_GPIO_Port, leftRightIr_Pin, leftRightIr_GPIO_Port}};
+
 const int adjustedTargetRatios[4][4] = {{1, 1, 1, 1}, {1, -1, -1, 1}, {1, -1, 1, -1}, {0, 1, 1, 0}};
-const double distanceAdjust[4] = {1, 1.01, 1, 1.27};
+const double distanceAdjust[4] = {1, 1.0209345, 1, 1.27};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
 const double kpp = 3.9, kii = 0, kdd = 0, period = 0.01, alpha = 0.3;
-const int intMax = 40, maxPwm = 4095, maxSpeeeed = 14000, minSpeed = 2000, speedAdjust = 1000, breakDistance = 500, quarterTurn = 4875;
+const int intMax = 40, maxPwm = 4095, maxSpeed = 13000, minSpeed = 2000, speedAdjust = 500, breakDistance = 500, quarterTurn = 4875;
+uint32_t timerFreq = HAL_RCC_GetPCLK2Freq();
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -121,6 +135,8 @@ static void MX_TIM3_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_TIM5_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_TIM11_Init(void);
+static void MX_TIM9_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -175,6 +191,30 @@ void PCA9685_SetPWM(uint8_t Channel, uint16_t OnTime, uint16_t OffTime)
   pwm[2] = OffTime & 0xFF;
   pwm[3] = OffTime>>8;
   HAL_I2C_Mem_Write(&hi2c1, PCA9685_ADDRESS, registerAddress, I2C_MEMADD_SIZE_8BIT, pwm, 4, 10);
+}
+
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+{
+ if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
+ {
+	 captureValueUp = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+	 if ((captureValueUp - previousCaptureValueUp) > 0) frequencyUp = timerFreq / (captureValueUp - previousCaptureValueUp);
+	 previousCaptureValueUp = captureValueUp;
+ }
+ if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2)
+ {
+	 captureValueDown = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
+	 if ((captureValueDown - previousCaptureValueDown) > 0) frequencyDown = timerFreq / (captureValueDown - previousCaptureValueDown);
+	 previousCaptureValueDown = captureValueDown;
+ }
+}
+
+void shoot()
+{
+	HAL_GPIO_TogglePin(solenoid_GPIO_Port, solenoid_Pin);
+	HAL_Delay(20);
+	HAL_GPIO_TogglePin(solenoid_GPIO_Port, solenoid_Pin);
+	HAL_Delay(2000);
 }
 
 double updateEncoder(pidState *positions, int index)
@@ -266,9 +306,9 @@ double updatePid(pidState *pid, double error, double velocity, int index)
 	return propVal + intVal + dervVal;
 }
 
-void onewordPid(double target, int mode, int irEnable, int junction)
+void onewordPid(double target, int mode, int irEnable, int junction, int maxSpeeeed)
 {
-	int prevJunc = 1;
+	int prevJuncPos = 0;
 	int junctionCount = 0;
 	target = target * distanceAdjust[mode];
 	int targetSpeed = maxSpeeeed;
@@ -303,20 +343,21 @@ void onewordPid(double target, int mode, int irEnable, int junction)
 				else if (rightIr && middleIr) adjustRatio = 1;
 				else adjustRatio = 0;
 			}
-			if (junction)
-			{
-				irPins junctionIr = irSensors[(mode == 0 ? (junction < 0 ? 3 : 1) : (junction < 0 ? 0 : 2))];
-				if (!prevJunc && HAL_GPIO_ReadPin(junctionIr.middlePort, junctionIr.middlePin))
-				{
-					prevJunc = 1;
-					junctionCount++;
-				}
-				else if (prevJunc && !(HAL_GPIO_ReadPin(junctionIr.middlePort, junctionIr.middlePin))) prevJunc = 0;
-			}
+
 			int32_t averagePosition = ((motorState[0].totalPos * adjustedTargetRatios[mode][0]) +
 										(motorState[1].totalPos * adjustedTargetRatios[mode][1]) +
 										(motorState[2].totalPos * adjustedTargetRatios[mode][2]) +
 										(motorState[3].totalPos * adjustedTargetRatios[mode][3])) / (mode == 3 ? 2 : 4);
+
+			if (junction)
+			{
+				irPins junctionIr = irSensors[(mode == 0 ? (junction < 0 ? 3 : 1) : (junction < 0 ? 0 : 2))];
+				if (HAL_GPIO_ReadPin(junctionIr.middlePort, junctionIr.middlePin) && (averagePosition - prevJuncPos >= 3350))
+				{
+					prevJuncPos = averagePosition;
+					junctionCount++;
+				}
+			}
 
 			printf("%d,%d,%d,%d\n", rawVal2, rawVal3, rawVal4, rawVal5);
 			for (int index = 0; index < 4; index++)
@@ -326,7 +367,7 @@ void onewordPid(double target, int mode, int irEnable, int junction)
 				if (index == 1) rawVal3 = currentSpeed;
 				if (index == 2) rawVal4 = currentSpeed;
 				if (index == 3) rawVal5 = currentSpeed;
-				if (motorState[index].reached) continue;
+				if (!junction && motorState[index].reached) continue;
 
 				int distanceAway = adjustedTargetRatios[mode][index] * (target - averagePosition);
 				if (distanceAway > breakDistance) targetSpeed = maxSpeeeed;
@@ -338,6 +379,7 @@ void onewordPid(double target, int mode, int irEnable, int junction)
 					if (targetSpeed > 0 && targetSpeed < minSpeed) targetSpeed = minSpeed;
 					if (targetSpeed < 0 && targetSpeed > -minSpeed) targetSpeed = -minSpeed;
 				}
+				if (junction) targetSpeed = maxSpeeeed;
 
 				if (adjustRatio && (index == 0 || index == 2)) targetSpeed += speedAdjust * adjustRatio;
 				else if (adjustRatio) targetSpeed += -(speedAdjust * adjustRatio);
@@ -346,11 +388,12 @@ void onewordPid(double target, int mode, int irEnable, int junction)
 
 				int error = targetSpeed - currentSpeed;
 				double pwmVal = updatePid(&motorState[index], error, currentSpeed, index) + (motors[index].kf * targetSpeed);
+				if (adjustedTargetRatios[mode][index] == 0) pwmVal = 0;
 				int absPwm = (int)(pwmVal < 0 ? -pwmVal : pwmVal);
 //				absPwm = 4095; pwmVal = 4095;
 				oneWord(absPwm > maxPwm ? maxPwm : absPwm, pwmVal < 0 ? BACKWARDS : FORWARD, index);
 
-				if (distanceAway < 50 && distanceAway > -50)
+				if (!junction && distanceAway < 50 && distanceAway > -50)
 				{
 					motorState[index].reached = 1;
 					motorState[index].intState = 0;
@@ -367,6 +410,22 @@ void onewordPid(double target, int mode, int irEnable, int junction)
 		}
 	}
 	stop();
+}
+
+void allign(int straighSensor, int sidewaysSensor)
+{
+	irPins straightIrRay = irSensors[straighSensor < 0 ? 2 : 0];
+	irPins sidewaysIrRay = irSensors[sidewaysSensor < 0 ? 3 : 1];
+	int straightLeftIr = HAL_GPIO_ReadPin(straightIrRay.leftPort, straightIrRay.leftPin);
+	int straighMiddleIr = HAL_GPIO_ReadPin(straightIrRay.middlePort, straightIrRay.middlePin);
+	int straightRightIr = HAL_GPIO_ReadPin(straightIrRay.rightPort, straightIrRay.rightPin);
+
+	int sidewaysLeftIr = HAL_GPIO_ReadPin(sidewaysIrRay.leftPort, sidewaysIrRay.leftPin);
+	int sidewaysMiddleIr = HAL_GPIO_ReadPin(sidewaysIrRay.middlePort, sidewaysIrRay.middlePin);
+	int sidewaysRightIr = HAL_GPIO_ReadPin(sidewaysIrRay.rightPort, sidewaysIrRay.rightPin);
+
+	if (straightLeftIr && sidewaysLeftIr) onewordPid(-500, 2, 0, 0, 5000);
+	else if (straightRightIr&& sidewaysRightIr) onewordPid(500, 2, 0, 0, 5000);
 }
 
 //void onewordPid(int target)
@@ -443,6 +502,8 @@ int main(void)
   MX_TIM4_Init();
   MX_TIM5_Init();
   MX_I2C1_Init();
+  MX_TIM11_Init();
+  MX_TIM9_Init();
   /* USER CODE BEGIN 2 */
   extern UART_HandleTypeDef huart2;
   PCA9685_Init(1526);
@@ -454,6 +515,9 @@ int main(void)
   HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_2);
   HAL_TIM_Encoder_Start(&htim5, TIM_CHANNEL_1);
   HAL_TIM_Encoder_Start(&htim5, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim11, TIM_CHANNEL_1);
+  HAL_TIM_IC_Start_IT(&htim9, TIM_CHANNEL_1);
+  HAL_TIM_IC_Start_IT(&htim9, TIM_CHANNEL_2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -469,31 +533,44 @@ int main(void)
   }
   //29400 for rotation
   HAL_Delay(500);
-//  onewordPid(60000,0, 0);
+//  onewordPid(60000,0, 0, 0);
 
-//  onewordPid(25043.50776, 0);
-///  onewordPid(2 * quarterTurn, 2);
-//  onewordPid(20374.379, 0);
-//  onewordPid(2 * quarterTurn, 2);
-//  onewordPid(20374.379, 0);
-//  onewordPid(-2 * quarterTurn, 2);
-//  onewordPid(61123.137, 0);
-//  onewordPid(-2 * quarterTurn, 2);
-//  onewordPid(10187.189, 0);
-//  onewordPid(-quarterTurn, 2);
-//  onewordPid(28813.7234, 0);
+  onewordPid(25043.50776, 0, 1, 0, maxSpeed);
+  onewordPid(2 * quarterTurn, 2, 0, 0, maxSpeed);
+  onewordPid(20374.379, 0, 1, 0, maxSpeed);
+  onewordPid(2 * quarterTurn, 2, 0, 0, maxSpeed);
+  onewordPid(8689.85989, 0, 1, 0, maxSpeed);
+  onewordPid(-2 * quarterTurn, 2, 0, 0, maxSpeed);
+  shoot();
+  onewordPid(2 * quarterTurn, 2, 0, 0, maxSpeed);
+  onewordPid(11684.5, 0, 1, 0, maxSpeed);
+  onewordPid(-2 * quarterTurn, 2, 0, 0, maxSpeed);
+  onewordPid(49599.04698, 0, 1, 0, maxSpeed);
+  onewordPid(2 * quarterTurn, 2, 0, 0, maxSpeed);
+  onewordPid(14856.318, 0, 1, 0, maxSpeed);
+  onewordPid(-2673.80304, 1, 0, 0, maxSpeed);
+  shoot();
+  onewordPid(1336.90152197, 1, 0, 0, maxSpeed);
+  shoot();
+  onewordPid(-10187.189, 1, 0, 0, maxSpeed);
+  onewordPid(-25043.31, 0, 1, 0, maxSpeed);
+  onewordPid(10187.189, 1, 0, 0, maxSpeed);
+  onewordPid(4 * quarterTurn, 2, 0, 0, maxSpeed);
+  onewordPid(16000, 3, 0, 0, maxSpeed);
+  onewordPid((20374.379 * 1.30943) + 8000, 0, 1, 0, 10000);
+  onewordPid(5000, 1, 0, 0, maxSpeed);
 
 //  onewordPid(-20374.379, 1, 1);
-
-  onewordPid(-25838.9641, 1, 1, 3);
-  onewordPid(20374.379, 0, 1, -2);
-  onewordPid(20374.379, 1, 1, -2);
-  onewordPid(61123.137, 0, 1, 6);
-  onewordPid(-10187.189, 1, 1, 1);
-  onewordPid(-10187.189, 0, 0, -1);
-  onewordPid(quarterTurn * -2, 2, 0, 0);
-  onewordPid(28813.7234, 3, 0, 0);
-  onewordPid(20374.379 * 1.30943, 0, 1, 1);
+//  -25838.9641
+//  onewordPid(-25544.845, 1, 1, 0, maxSpeed);
+//  onewordPid(20374.379, 0, 1, 0, maxSpeed);
+//  onewordPid(20374.379, 1, 1, 0, maxSpeed);
+//  onewordPid(61123.137, 0, 1, 0, maxSpeed);
+//  onewordPid(-10187.189, 1, 0, 0, maxSpeed);
+//  onewordPid(-10187.189, 0, 0, 0, maxSpeed);
+//  onewordPid(quarterTurn * -2, 2, 0, 0, maxSpeed);
+//  onewordPid(16000, 3, 0, 0, maxSpeed);
+//  onewordPid((20374.379 * 1.30943) + 8000, 0, 1, 0, 10000);
 
   while (1)
   {
@@ -788,6 +865,120 @@ static void MX_TIM5_Init(void)
 }
 
 /**
+  * @brief TIM9 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM9_Init(void)
+{
+
+  /* USER CODE BEGIN TIM9_Init 0 */
+
+  /* USER CODE END TIM9_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_IC_InitTypeDef sConfigIC = {0};
+
+  /* USER CODE BEGIN TIM9_Init 1 */
+
+  /* USER CODE END TIM9_Init 1 */
+  htim9.Instance = TIM9;
+  htim9.Init.Prescaler = 0;
+  htim9.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim9.Init.Period = 65535;
+  htim9.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim9.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim9) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim9, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_IC_Init(&htim9) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim9, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
+  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
+  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
+  sConfigIC.ICFilter = 0;
+  if (HAL_TIM_IC_ConfigChannel(&htim9, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_IC_ConfigChannel(&htim9, &sConfigIC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM9_Init 2 */
+
+  /* USER CODE END TIM9_Init 2 */
+
+}
+
+/**
+  * @brief TIM11 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM11_Init(void)
+{
+
+  /* USER CODE BEGIN TIM11_Init 0 */
+
+  /* USER CODE END TIM11_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM11_Init 1 */
+
+  /* USER CODE END TIM11_Init 1 */
+  htim11.Instance = TIM11;
+  htim11.Init.Prescaler = 31;
+  htim11.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim11.Init.Period = 19999;
+  htim11.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim11.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim11) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim11, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim11) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 500;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim11, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM11_Init 2 */
+
+  /* USER CODE END TIM11_Init 2 */
+  HAL_TIM_MspPostInit(&htim11);
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -844,7 +1035,7 @@ static void MX_GPIO_Init(void)
                           |bottomRightL_EN_Pin|bottomLeftR_EN_Pin|bottomRightR_EN_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, solenoid_Pin|LD2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(bottomLeftL_EN_GPIO_Port, bottomLeftL_EN_Pin, GPIO_PIN_RESET);
@@ -864,29 +1055,29 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : LD2_Pin */
-  GPIO_InitStruct.Pin = LD2_Pin;
+  /*Configure GPIO pins : solenoid_Pin LD2_Pin */
+  GPIO_InitStruct.Pin = solenoid_Pin|LD2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : leftRightIr_Pin leftMiddleIR_Pin leftLeftIR_Pin */
-  GPIO_InitStruct.Pin = leftRightIr_Pin|leftMiddleIR_Pin|leftLeftIR_Pin;
+  /*Configure GPIO pins : leftRightIr_Pin leftMiddleIR_Pin backLeftIR_Pin leftLeftIR_Pin */
+  GPIO_InitStruct.Pin = leftRightIr_Pin|leftMiddleIR_Pin|backLeftIR_Pin|leftLeftIR_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : backMiddleIR_Pin backRightIR_Pin rightLeftIR_Pin frontMiddleIR_Pin
-                           frontLeftIR_Pin backLeftIR_Pin */
-  GPIO_InitStruct.Pin = backMiddleIR_Pin|backRightIR_Pin|rightLeftIR_Pin|frontMiddleIR_Pin
-                          |frontLeftIR_Pin|backLeftIR_Pin;
+  /*Configure GPIO pins : backMiddleIR_Pin backRightIR_Pin rightLeftIR_Pin */
+  GPIO_InitStruct.Pin = backMiddleIR_Pin|backRightIR_Pin|rightLeftIR_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : frontRightIR_Pin rightMiddleIR_Pin rightRightIr_Pin */
-  GPIO_InitStruct.Pin = frontRightIR_Pin|rightMiddleIR_Pin|rightRightIr_Pin;
+  /*Configure GPIO pins : frontLeftIR_Pin frontMiddleIR_Pin frontRightIR_Pin rightMiddleIR_Pin
+                           rightRightIr_Pin */
+  GPIO_InitStruct.Pin = frontLeftIR_Pin|frontMiddleIR_Pin|frontRightIR_Pin|rightMiddleIR_Pin
+                          |rightRightIr_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);

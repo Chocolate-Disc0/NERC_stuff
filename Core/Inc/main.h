@@ -49,6 +49,8 @@ extern "C" {
 
 /* USER CODE END EM */
 
+void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
+
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
 
@@ -75,6 +77,8 @@ void Error_Handler(void);
 #define USART_TX_GPIO_Port GPIOA
 #define USART_RX_Pin GPIO_PIN_3
 #define USART_RX_GPIO_Port GPIOA
+#define solenoid_Pin GPIO_PIN_4
+#define solenoid_GPIO_Port GPIOA
 #define LD2_Pin GPIO_PIN_5
 #define LD2_GPIO_Port GPIOA
 #define topRightEncA_Pin GPIO_PIN_6
@@ -89,16 +93,22 @@ void Error_Handler(void);
 #define backRightIR_GPIO_Port GPIOB
 #define rightLeftIR_Pin GPIO_PIN_12
 #define rightLeftIR_GPIO_Port GPIOB
-#define frontMiddleIR_Pin GPIO_PIN_13
-#define frontMiddleIR_GPIO_Port GPIOB
-#define frontLeftIR_Pin GPIO_PIN_14
-#define frontLeftIR_GPIO_Port GPIOB
-#define backLeftIR_Pin GPIO_PIN_15
-#define backLeftIR_GPIO_Port GPIOB
+#define upperColour_Pin GPIO_PIN_13
+#define upperColour_GPIO_Port GPIOB
+#define downColour_Pin GPIO_PIN_14
+#define downColour_GPIO_Port GPIOB
+#define servoOutput_Pin GPIO_PIN_15
+#define servoOutput_GPIO_Port GPIOB
 #define leftMiddleIR_Pin GPIO_PIN_6
 #define leftMiddleIR_GPIO_Port GPIOC
+#define backLeftIR_Pin GPIO_PIN_7
+#define backLeftIR_GPIO_Port GPIOC
 #define leftLeftIR_Pin GPIO_PIN_8
 #define leftLeftIR_GPIO_Port GPIOC
+#define frontLeftIR_Pin GPIO_PIN_8
+#define frontLeftIR_GPIO_Port GPIOA
+#define frontMiddleIR_Pin GPIO_PIN_9
+#define frontMiddleIR_GPIO_Port GPIOA
 #define frontRightIR_Pin GPIO_PIN_10
 #define frontRightIR_GPIO_Port GPIOA
 #define rightMiddleIR_Pin GPIO_PIN_11
