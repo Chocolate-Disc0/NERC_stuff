@@ -93,10 +93,10 @@ void Error_Handler(void);
 #define backRightIR_GPIO_Port GPIOB
 #define rightLeftIR_Pin GPIO_PIN_12
 #define rightLeftIR_GPIO_Port GPIOB
-#define upperColour_Pin GPIO_PIN_13
-#define upperColour_GPIO_Port GPIOB
-#define downColour_Pin GPIO_PIN_14
-#define downColour_GPIO_Port GPIOB
+#define upperColourIn_Pin GPIO_PIN_13
+#define upperColourIn_GPIO_Port GPIOB
+#define downColourIn_Pin GPIO_PIN_14
+#define downColourIn_GPIO_Port GPIOB
 #define servoOutput_Pin GPIO_PIN_15
 #define servoOutput_GPIO_Port GPIOB
 #define leftMiddleIR_Pin GPIO_PIN_6
@@ -131,6 +131,10 @@ void Error_Handler(void);
 #define bottomLeftL_EN_GPIO_Port GPIOD
 #define topLeftEncA_Pin GPIO_PIN_3
 #define topLeftEncA_GPIO_Port GPIOB
+#define colourUpEN_Pin GPIO_PIN_4
+#define colourUpEN_GPIO_Port GPIOB
+#define colourDownEN_Pin GPIO_PIN_5
+#define colourDownEN_GPIO_Port GPIOB
 #define bottomLeftEncB_Pin GPIO_PIN_6
 #define bottomLeftEncB_GPIO_Port GPIOB
 #define bottomLeftEncA_Pin GPIO_PIN_7

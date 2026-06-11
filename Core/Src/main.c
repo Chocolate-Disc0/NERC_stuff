@@ -38,9 +38,11 @@ uint16_t captureValueUp = 0;
 uint16_t previousCaptureValueUp = 0;
 uint32_t frequencyUp = 0;
 
-uint32_t captureValueDown = 0;
-uint32_t previousCaptureValueDown = 0;
+uint16_t captureValueDown = 0;
+uint16_t previousCaptureValueDown = 0;
 uint32_t frequencyDown = 0;
+
+uint32_t timerFreq;
 
 typedef struct
 {
@@ -123,7 +125,7 @@ const double distanceAdjust[4] = {1, 1.0209345, 1, 1.27};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
 const double kpp = 3.9, kii = 0, kdd = 0, period = 0.01, alpha = 0.3;
 const int intMax = 40, maxPwm = 4095, maxSpeed = 13000, minSpeed = 2000, speedAdjust = 500, breakDistance = 500, quarterTurn = 4875;
-uint32_t timerFreq = HAL_RCC_GetPCLK2Freq();
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -491,7 +493,18 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+  for (int index = 0; index < 16; index++)
+  {
+	  if (index < 4)
+	  {
+		  HAL_GPIO_WritePin(motors[index].rightEnPort, motors[index].rightEnPin, GPIO_PIN_SET);
+		  HAL_GPIO_WritePin(motors[index].leftEnPort, motors[index].leftEnPin, GPIO_PIN_SET);
+	  }
+	  PCA9685_SetPWM(index, 0, 0);
+  }
+  timerFreq = HAL_RCC_GetPCLK2Freq();
+  HAL_GPIO_WritePin(colourDownEN_GPIO_Port, colourDownEN_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(colourUpEN_GPIO_Port, colourUpEN_Pin, GPIO_PIN_SET);
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -522,15 +535,6 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  for (int index = 0; index < 16; index++)
-  {
-	  if (index < 4)
-	  {
-		  HAL_GPIO_WritePin(motors[index].rightEnPort, motors[index].rightEnPin, GPIO_PIN_SET);
-		  HAL_GPIO_WritePin(motors[index].leftEnPort, motors[index].leftEnPin, GPIO_PIN_SET);
-	  }
-	  PCA9685_SetPWM(index, 0, 0);
-  }
   //29400 for rotation
   HAL_Delay(500);
 //  onewordPid(60000,0, 0, 0);
@@ -1040,6 +1044,9 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(bottomLeftL_EN_GPIO_Port, bottomLeftL_EN_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, colourUpEN_Pin|colourDownEN_Pin, GPIO_PIN_RESET);
+
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
@@ -1088,6 +1095,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(bottomLeftL_EN_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : colourUpEN_Pin colourDownEN_Pin */
+  GPIO_InitStruct.Pin = colourUpEN_Pin|colourDownEN_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
