@@ -124,7 +124,7 @@ const int adjustedTargetRatios[4][4] = {{1, 1, 1, 1}, {1, -1, -1, 1}, {1, -1, 1,
 const double distanceAdjust[4] = {1, 1.0209345, 1, 1.27};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
 const double kpp = 3.9, kii = 0, kdd = 0, period = 0.01, alpha = 0.3;
-const int intMax = 40, maxPwm = 4095, maxSpeed = 13000, minSpeed = 2000, speedAdjust = 500, breakDistance = 500, quarterTurn = 4875;
+const int intMax = 40, maxPwm = 4095, maxSpeed = 13000, minSpeed = 2000, speedAdjust = 500, breakDistance = 500, quarterTurn = 4875, blueFreqMin = 8000;
 
 /* USER CODE END PV */
 
@@ -200,23 +200,50 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
  if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
  {
 	 captureValueUp = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-	 if ((captureValueUp - previousCaptureValueUp) > 0) frequencyUp = timerFreq / (captureValueUp - previousCaptureValueUp);
+	 if ((captureValueUp - previousCaptureValueUp) != 0) frequencyUp = timerFreq / (captureValueUp - previousCaptureValueUp);
 	 previousCaptureValueUp = captureValueUp;
  }
  if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2)
  {
 	 captureValueDown = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
-	 if ((captureValueDown - previousCaptureValueDown) > 0) frequencyDown = timerFreq / (captureValueDown - previousCaptureValueDown);
+	 if ((captureValueDown - previousCaptureValueDown) != 0) frequencyDown = timerFreq / (captureValueDown - previousCaptureValueDown);
 	 previousCaptureValueDown = captureValueDown;
  }
 }
 
 void shoot()
 {
-	HAL_GPIO_TogglePin(solenoid_GPIO_Port, solenoid_Pin);
+	HAL_GPIO_WritePin(solenoid_GPIO_Port, solenoid_Pin, GPIO_PIN_SET);
 	HAL_Delay(20);
-	HAL_GPIO_TogglePin(solenoid_GPIO_Port, solenoid_Pin);
-	HAL_Delay(2000);
+	HAL_GPIO_WritePin(solenoid_GPIO_Port, solenoid_Pin, GPIO_PIN_RESET);
+	HAL_Delay(50);
+}
+
+int scanColour()
+{
+	frequencyUp = 0;
+	frequencyUp = 0;
+	int shotsFired = 0;
+	HAL_TIM_IC_Start_IT(&htim9, TIM_CHANNEL_1);
+	HAL_TIM_IC_Start_IT(&htim9, TIM_CHANNEL_2);
+	HAL_Delay(10);
+	if (frequencyUp > blueFreqMin)
+	{
+		shoot();
+		shotsFired++;
+	}
+	if (frequencyDown > blueFreqMin)
+	{
+		__HAL_TIM_SET_COMPARE(&htim11, TIM_CHANNEL_1, 1500);
+		HAL_Delay(200);
+		shoot();
+		shotsFired++;
+		__HAL_TIM_SET_COMPARE(&htim11, TIM_CHANNEL_1, 1111);
+		HAL_Delay(200);
+	}
+	HAL_TIM_IC_Stop(&htim9, TIM_CHANNEL_1);
+	HAL_TIM_IC_Stop(&htim9, TIM_CHANNEL_2);
+	return shotsFired;
 }
 
 double updateEncoder(pidState *positions, int index)
@@ -503,8 +530,6 @@ int main(void)
 	  PCA9685_SetPWM(index, 0, 0);
   }
   timerFreq = HAL_RCC_GetPCLK2Freq();
-  HAL_GPIO_WritePin(colourDownEN_GPIO_Port, colourDownEN_Pin, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(colourUpEN_GPIO_Port, colourUpEN_Pin, GPIO_PIN_SET);
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -529,8 +554,6 @@ int main(void)
   HAL_TIM_Encoder_Start(&htim5, TIM_CHANNEL_1);
   HAL_TIM_Encoder_Start(&htim5, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim11, TIM_CHANNEL_1);
-  HAL_TIM_IC_Start_IT(&htim9, TIM_CHANNEL_1);
-  HAL_TIM_IC_Start_IT(&htim9, TIM_CHANNEL_2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -696,15 +719,15 @@ static void MX_TIM2_Init(void)
   htim2.Init.Period = 65535;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
   sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
-  sConfig.IC1Filter = 10;
+  sConfig.IC1Filter = 0;
   sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
-  sConfig.IC2Filter = 10;
+  sConfig.IC2Filter = 0;
   if (HAL_TIM_Encoder_Init(&htim2, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -968,7 +991,7 @@ static void MX_TIM11_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 500;
+  sConfigOC.Pulse = 1500;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim11, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
@@ -1044,9 +1067,6 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(bottomLeftL_EN_GPIO_Port, bottomLeftL_EN_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, colourUpEN_Pin|colourDownEN_Pin, GPIO_PIN_RESET);
-
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
@@ -1095,13 +1115,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(bottomLeftL_EN_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : colourUpEN_Pin colourDownEN_Pin */
-  GPIO_InitStruct.Pin = colourUpEN_Pin|colourDownEN_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 

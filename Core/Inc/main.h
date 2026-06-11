@@ -131,10 +131,6 @@ void Error_Handler(void);
 #define bottomLeftL_EN_GPIO_Port GPIOD
 #define topLeftEncA_Pin GPIO_PIN_3
 #define topLeftEncA_GPIO_Port GPIOB
-#define colourUpEN_Pin GPIO_PIN_4
-#define colourUpEN_GPIO_Port GPIOB
-#define colourDownEN_Pin GPIO_PIN_5
-#define colourDownEN_GPIO_Port GPIOB
 #define bottomLeftEncB_Pin GPIO_PIN_6
 #define bottomLeftEncB_GPIO_Port GPIOB
 #define bottomLeftEncA_Pin GPIO_PIN_7
