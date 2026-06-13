@@ -34,13 +34,13 @@ volatile int leftIr = 0;
 volatile int middleIr = 0;
 volatile int rightIr = 0;
 
-uint16_t captureValueUp = 0;
-uint16_t previousCaptureValueUp = 0;
-uint32_t frequencyUp = 0;
+volatile uint16_t captureValueUp = 0;
+volatile uint16_t previousCaptureValueUp = 0;
+volatile uint32_t frequencyUp = 0;
 
-uint16_t captureValueDown = 0;
-uint16_t previousCaptureValueDown = 0;
-uint32_t frequencyDown = 0;
+volatile uint16_t captureValueDown = 0;
+volatile uint16_t previousCaptureValueDown = 0;
+volatile uint32_t frequencyDown = 0;
 
 uint32_t timerFreq;
 
@@ -124,7 +124,7 @@ const int adjustedTargetRatios[4][4] = {{1, 1, 1, 1}, {1, -1, -1, 1}, {1, -1, 1,
 const double distanceAdjust[4] = {1, 1.0209345, 1, 1.27};
 const int FORWARD = 1, BACKWARDS = 0, RIGHT = 1, LEFT = 0;
 const double kpp = 3.9, kii = 0, kdd = 0, period = 0.01, alpha = 0.3;
-const int intMax = 40, maxPwm = 4095, maxSpeed = 13000, minSpeed = 2000, speedAdjust = 500, breakDistance = 500, quarterTurn = 4875, blueFreqMin = 8000;
+const int intMax = 40, maxPwm = 4095, maxSpeed = 13000, minSpeed = 2000, speedAdjust = 750, breakDistance = 500, quarterTurn = 4875, upBlueFreqMin = 2100, downBlueFreqMin = 1250;
 
 /* USER CODE END PV */
 
@@ -216,33 +216,36 @@ void shoot()
 	HAL_GPIO_WritePin(solenoid_GPIO_Port, solenoid_Pin, GPIO_PIN_SET);
 	HAL_Delay(20);
 	HAL_GPIO_WritePin(solenoid_GPIO_Port, solenoid_Pin, GPIO_PIN_RESET);
-	HAL_Delay(50);
+	HAL_Delay(100);
 }
 
 int scanColour()
 {
+	__HAL_TIM_SET_COMPARE(&htim11, TIM_CHANNEL_1, 1200);
+	HAL_Delay(500);
 	frequencyUp = 0;
-	frequencyUp = 0;
+	frequencyDown = 0;
 	int shotsFired = 0;
 	HAL_TIM_IC_Start_IT(&htim9, TIM_CHANNEL_1);
 	HAL_TIM_IC_Start_IT(&htim9, TIM_CHANNEL_2);
-	HAL_Delay(10);
-	if (frequencyUp > blueFreqMin)
+	HAL_Delay(25);
+	HAL_TIM_IC_Stop_IT(&htim9, TIM_CHANNEL_1);
+	HAL_TIM_IC_Stop_IT(&htim9, TIM_CHANNEL_2);
+	if (frequencyUp != 0 && frequencyUp >= upBlueFreqMin)
 	{
 		shoot();
 		shotsFired++;
 	}
-	if (frequencyDown > blueFreqMin)
+	if (frequencyDown !=0 && frequencyDown >= downBlueFreqMin)
 	{
 		__HAL_TIM_SET_COMPARE(&htim11, TIM_CHANNEL_1, 1500);
-		HAL_Delay(200);
+		HAL_Delay(500);
 		shoot();
 		shotsFired++;
-		__HAL_TIM_SET_COMPARE(&htim11, TIM_CHANNEL_1, 1111);
-		HAL_Delay(200);
 	}
-	HAL_TIM_IC_Stop(&htim9, TIM_CHANNEL_1);
-	HAL_TIM_IC_Stop(&htim9, TIM_CHANNEL_2);
+	HAL_Delay(500);
+	__HAL_TIM_SET_COMPARE(&htim11, TIM_CHANNEL_1, 1200);
+	HAL_Delay(270);
 	return shotsFired;
 }
 
@@ -438,7 +441,6 @@ void onewordPid(double target, int mode, int irEnable, int junction, int maxSpee
 			break;
 		}
 	}
-	stop();
 }
 
 void allign(int straighSensor, int sidewaysSensor)
@@ -520,16 +522,7 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-  for (int index = 0; index < 16; index++)
-  {
-	  if (index < 4)
-	  {
-		  HAL_GPIO_WritePin(motors[index].rightEnPort, motors[index].rightEnPin, GPIO_PIN_SET);
-		  HAL_GPIO_WritePin(motors[index].leftEnPort, motors[index].leftEnPin, GPIO_PIN_SET);
-	  }
-	  PCA9685_SetPWM(index, 0, 0);
-  }
-  timerFreq = HAL_RCC_GetPCLK2Freq();
+
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -554,6 +547,17 @@ int main(void)
   HAL_TIM_Encoder_Start(&htim5, TIM_CHANNEL_1);
   HAL_TIM_Encoder_Start(&htim5, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim11, TIM_CHANNEL_1);
+
+  for (int index = 0; index < 16; index++)
+  {
+	  if (index < 4)
+	  {
+		  HAL_GPIO_WritePin(motors[index].rightEnPort, motors[index].rightEnPin, GPIO_PIN_SET);
+		  HAL_GPIO_WritePin(motors[index].leftEnPort, motors[index].leftEnPin, GPIO_PIN_SET);
+	  }
+	  PCA9685_SetPWM(index, 0, 0);
+  }
+  timerFreq = HAL_RCC_GetPCLK2Freq();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -562,30 +566,48 @@ int main(void)
   HAL_Delay(500);
 //  onewordPid(60000,0, 0, 0);
 
-  onewordPid(25043.50776, 0, 1, 0, maxSpeed);
+  onewordPid(25377.7331, 0, 1, 0, maxSpeed);
   onewordPid(2 * quarterTurn, 2, 0, 0, maxSpeed);
+  onewordPid(40748.75, 0, 1, 0, maxSpeed);
+  onewordPid(2 * quarterTurn, 2, 0, 0, maxSpeed);
+  onewordPid(8616.8655, 0, 1, 0, maxSpeed);
+  onewordPid(2 * quarterTurn, 2, 0, 0, maxSpeed);
+  int s1 = scanColour();
+  onewordPid(-2740.64, 1, 0, 0, maxSpeed);
+  s1 += scanColour();
+  if (s1 < 2) shoot();
+  if (s1 == 0)
+  {
+	  __HAL_TIM_SET_COMPARE(&htim11, TIM_CHANNEL_1, 1500);
+	  HAL_Delay(500);
+	  shoot();
+  }
+  __HAL_TIM_SET_COMPARE(&htim11, TIM_CHANNEL_1, 1200);
+  onewordPid(1370.32, 1, 0, 0, maxSpeed);
+  onewordPid(-2 * quarterTurn, 2, 0, 0, maxSpeed);
   onewordPid(20374.379, 0, 1, 0, maxSpeed);
-  onewordPid(2 * quarterTurn, 2, 0, 0, maxSpeed);
-  onewordPid(8689.85989, 0, 1, 0, maxSpeed);
   onewordPid(-2 * quarterTurn, 2, 0, 0, maxSpeed);
-  shoot();
+  onewordPid(29224.66779, 0, 1, 0, maxSpeed);
   onewordPid(2 * quarterTurn, 2, 0, 0, maxSpeed);
-  onewordPid(11684.5, 0, 1, 0, maxSpeed);
-  onewordPid(-2 * quarterTurn, 2, 0, 0, maxSpeed);
-  onewordPid(49599.04698, 0, 1, 0, maxSpeed);
-  onewordPid(2 * quarterTurn, 2, 0, 0, maxSpeed);
-  onewordPid(14856.318, 0, 1, 0, maxSpeed);
+  onewordPid(3255, 0, 1, 0, maxSpeed);
+  scanColour();
   onewordPid(-2673.80304, 1, 0, 0, maxSpeed);
-  shoot();
+  scanColour();
   onewordPid(1336.90152197, 1, 0, 0, maxSpeed);
-  shoot();
   onewordPid(-10187.189, 1, 0, 0, maxSpeed);
-  onewordPid(-25043.31, 0, 1, 0, maxSpeed);
+  onewordPid(-23630, 0, 1, 0, maxSpeed);
   onewordPid(10187.189, 1, 0, 0, maxSpeed);
   onewordPid(4 * quarterTurn, 2, 0, 0, maxSpeed);
   onewordPid(16000, 3, 0, 0, maxSpeed);
-  onewordPid((20374.379 * 1.30943) + 8000, 0, 1, 0, 10000);
-  onewordPid(5000, 1, 0, 0, maxSpeed);
+  onewordPid((20374.379 * 1.30943) + 8000, 0, 1, 0, maxSpeed);
+  onewordPid(-2 * quarterTurn, 2, 0, 0, maxSpeed);
+  onewordPid(13944, 0, 1, 0, maxSpeed);
+  onewordPid(-1336.90152197, 1, 0, 0, maxSpeed);
+  scanColour();
+  onewordPid(2673.80304, 1, 0, 0, maxSpeed);
+  scanColour();
+  onewordPid(-1336.90152197, 1, 0, 0, maxSpeed);
+  onewordPid(-24300, 1, 0, 0, maxSpeed);
 
 //  onewordPid(-20374.379, 1, 1);
 //  -25838.9641
@@ -598,16 +620,11 @@ int main(void)
 //  onewordPid(quarterTurn * -2, 2, 0, 0, maxSpeed);
 //  onewordPid(16000, 3, 0, 0, maxSpeed);
 //  onewordPid((20374.379 * 1.30943) + 8000, 0, 1, 0, 10000);
-
   while (1)
   {
-	  irPins irRay = irSensors[3];
-	  leftIr = HAL_GPIO_ReadPin(irRay.leftPort, irRay.leftPin);
-	  middleIr = HAL_GPIO_ReadPin(irRay.middlePort, irRay.middlePin);
-	  rightIr = HAL_GPIO_ReadPin(irRay.rightPort, irRay.rightPin);
-//	  leftIr = HAL_GPIO_ReadPin(frontLeftIR_GPIO_Port, frontLeftIR_Pin);
-//	  middleIr = HAL_GPIO_ReadPin(frontMiddleIR_GPIO_Port, frontMiddleIR_Pin);
-//	  rightIr = HAL_GPIO_ReadPin(frontRightIR_GPIO_Port, frontRightIR_Pin);
+	  leftIr = HAL_GPIO_ReadPin(frontLeftIR_GPIO_Port, frontLeftIR_Pin);
+	  middleIr = HAL_GPIO_ReadPin(frontMiddleIR_GPIO_Port, frontMiddleIR_Pin);
+	  rightIr = HAL_GPIO_ReadPin(frontRightIR_GPIO_Port, frontRightIR_Pin);
 	  //	  __HAL_TIM_SET_COMPARE(motors[1].pwmTimer, motors[1].channel, 500);
 	  //	  HAL_GPIO_WritePin(motors[1].pin1Port, motors[1].pin1Pin, GPIO_PIN_SET);
 	  //	  HAL_GPIO_WritePin(motors[1].pin2Port, motors[1].pin2Pin, GPIO_PIN_RESET);
@@ -719,15 +736,15 @@ static void MX_TIM2_Init(void)
   htim2.Init.Period = 65535;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
   sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
-  sConfig.IC1Filter = 0;
+  sConfig.IC1Filter = 10;
   sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
-  sConfig.IC2Filter = 0;
+  sConfig.IC2Filter = 10;
   if (HAL_TIM_Encoder_Init(&htim2, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -991,7 +1008,7 @@ static void MX_TIM11_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 1500;
+  sConfigOC.Pulse = 1200;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim11, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
